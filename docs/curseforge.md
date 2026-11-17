@@ -26,13 +26,13 @@ Publishing is free. It needs a CurseForge author account, which is why the proje
    `## X-Curse-Project-ID: <id>`
 2. Create an API token at https://authors.curseforge.com/#/settings/api-tokens and store it as a repo secret:
    `gh secret set CF_API_TOKEN --repo hasuwini77/dropoff`
-3. Set `## Version: 0.1.1` in the same file and add a `0.1.1` entry to `CHANGELOG.md`. The version shown in game comes from the TOC, not from the tag.
+3. Set `## Version: 0.2.1` in the same file and add a `0.2.1` entry to `CHANGELOG.md`. The version shown in game comes from the TOC, not from the tag.
 4. Commit, then tag and push:
-   `git tag v0.1.1 && git push origin v0.1.1`
+   `git tag v0.2.1 && git push origin v0.2.1`
 
 The release workflow runs the tests, builds `DropOff-<tag>.zip`, attaches it to a GitHub release and uploads it to CurseForge. The packager reads `## Interface: 16001` and files the upload under WoW Forever.
 
-The `v0.1.0` tag was pushed before the workflows existed, so it has no zip. The first file on CurseForge is `v0.1.1`.
+The `v0.1.0` and `v0.2.0` tags were pushed before the workflows existed, so they have no zip. The first file on CurseForge is `v0.2.1`.
 
 ## Summary (English)
 
@@ -58,6 +58,7 @@ What you get
 - A list of finished quests, with the slots each one frees and the distance to the hand-in.
 - An arrow to the next one. It uses TomTom if you have it and the game's own map pin if you don't.
 - Click a quest to go there first. Click it again to go back to nearest first.
+- The map icon next to a quest opens the world map on its hand-in.
 - Two more lists, without directions for now: quests in progress that hold items, and quest items that belong to no quest in your log.
 - One chat line when your bags are nearly full and finished quests are holding slots. Type /dropoff alert to turn it off.
 
@@ -90,6 +91,7 @@ Ce que tu as
 - La liste des quêtes terminées, avec les emplacements libérés et la distance jusqu'au PNJ.
 - Une flèche vers la prochaine. Elle passe par TomTom si tu l'as, sinon par le repère de carte du jeu.
 - Clique sur une quête pour y aller en premier. Clique à nouveau pour revenir à la plus proche d'abord.
+- L'icône de carte à côté d'une quête ouvre la carte du monde sur l'endroit où la rendre.
 - Deux autres listes, sans guidage pour l'instant : les quêtes en cours qui occupent des emplacements, et les objets de quête liés à aucune quête de ton journal.
 - Une ligne dans le chat quand tes sacs sont presque pleins et que des quêtes terminées occupent des emplacements. Tape /dropoff alert pour la couper.
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.0
+
+- Map button on each finished quest: heads there first and opens the world map on the hand-in zone.
+
 ## 0.1.0
 
 First version.
