@@ -289,6 +289,7 @@ local function InstallGlobals()
             return map.instance, { x = map.ox + position.x * map.size, y = map.oy + position.y * map.size }
         end,
         CanSetUserWaypointOnMap = function(mapId) return MAPS[mapId] ~= nil end,
+        OpenWorldMap = function(mapId) world.openedMap = mapId end,
         SetUserWaypoint = function(point) world.userWaypoint = point end,
         GetUserWaypoint = function() return world.userWaypoint end,
         ClearUserWaypoint = function()
@@ -717,6 +718,44 @@ test("clicking a row pins that quest", function()
     eq(LiveWaypoints()[1].title, "Tusks (Hunter)", "pinned quest is the target")
     ns.Pin(2)
     eq(LiveWaypoints()[1].title, "Pelts (Tanner)", "unpinned goes back to the nearest")
+end)
+
+test("the map button heads to that quest and opens the map on it", function()
+    Scene()
+    local ns = Load()
+    ns.Toggle()
+    local row
+    for _, candidate in ipairs(ns.UI.Rows()) do
+        if candidate.data.questID == 2 then row = candidate end
+    end
+    check(row and row.map:IsShown(), "button shown on a quest with a known place")
+    row.map:Click()
+    eq(LiveWaypoints()[1].title, "Tusks (Hunter)", "that quest is the target")
+    eq(world.openedMap, 1413, "world map opened on the hand-in zone")
+    row.map:Click()
+    eq(LiveWaypoints()[1].title, "Tusks (Hunter)", "a second click keeps it")
+
+    for _, candidate in ipairs(ns.UI.Rows()) do
+        if candidate.data.title == "Tails" then check(not candidate.map:IsShown(), "no button on a quest in progress") end
+    end
+end)
+
+test("the map button falls back to the map panel, and says so when it cannot", function()
+    Scene()
+    local ns = Load()
+    C_Map.OpenWorldMap = nil
+    WorldMapFrame = { shown = false }
+    function WorldMapFrame:Show() self.shown = true end
+    function WorldMapFrame:SetMapID(mapId) self.mapId = mapId end
+    ns.Toggle()
+    ns.ShowOnMap(1)
+    check(WorldMapFrame.shown, "panel shown")
+    eq(WorldMapFrame.mapId, 1411, "panel set to the zone")
+
+    WorldMapFrame = nil
+    world.chat = {}
+    ns.ShowOnMap(1)
+    check(ChatHas(ns.L.MSG_NO_MAP), "says the map cannot be opened")
 end)
 
 test("without TomTom the game's map pin is used", function()
