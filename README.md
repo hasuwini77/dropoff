@@ -29,7 +29,7 @@ Built for **WoW Forever** (interface 16001). English and French.
 - `/dropoff alert`: switch the "bags nearly full" hint on or off.
 - `/dropoff debug`: save a snapshot for bug reports (see below).
 
-Click a row to head there first. Click it again to go back to nearest first. Drag the window to move it.
+Click a row to head there first. Click it again to go back to nearest first. The map icon at the right of a row heads there too and opens the world map on the hand-in zone; it never unpins. Drag the window to move it.
 
 ## Reporting a wrong list
 

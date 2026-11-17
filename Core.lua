@@ -204,6 +204,18 @@ function ns.Pin(questID)
     ns.Refresh()
 end
 
+-- The map button on a row: head there first and open the world map on it.
+function ns.ShowOnMap(questID)
+    ns.state.pinned = questID
+    local plan = ns.Refresh()
+    for _, quest in ipairs(plan and plan.ready or {}) do
+        if quest.id == questID and quest.target then
+            if not ns.Nav.OpenMap(quest.target.mapId) then ns.Print(L.MSG_NO_MAP) end
+            return
+        end
+    end
+end
+
 ---------------------------------------------------------------------------
 -- Chat commands
 ---------------------------------------------------------------------------
