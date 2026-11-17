@@ -1,0 +1,11 @@
+# Changelog
+
+## 0.1.0
+
+First version.
+
+- Lists finished quests, holding bag items first, nearest hand-in first.
+- Points the way with TomTom, or the game's map pin without it.
+- Lists quests in progress that hold items, and quest items tied to no quest.
+- Chat hint when bags are nearly full and finished quests hold slots.
+- English and French.
