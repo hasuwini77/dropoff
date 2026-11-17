@@ -34,15 +34,12 @@ local static = {}
 -- Returns nil when there is no database or the quest is unknown to it.
 function Data.Static(questID)
     local cached = static[questID]
-    if cached ~= nil then return cached or nil end
+    if cached then return cached end
     local db = Data.DB()
     if not db then return nil end
 
     local Q = db.Quest
-    if type(Q.Exists) == "function" and not Try(Q.Exists, questID) then
-        static[questID] = false
-        return nil
-    end
+    if type(Q.Exists) == "function" and not Try(Q.Exists, questID) then return nil end
 
     local info = { items = {}, finishers = {}, hasObjectives = false, hasTrigger = false }
 
@@ -89,7 +86,9 @@ function Data.Static(questID)
         end
     end
 
-    static[questID] = info
+    -- Kept only once it names who ends the quest: a database that is still
+    -- loading answers with nothing, and that must not stick for the session.
+    if #info.finishers > 0 then static[questID] = info end
     return info
 end
 
