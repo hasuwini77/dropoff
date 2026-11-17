@@ -342,6 +342,7 @@ function Data.DebugDump()
     local plan = ns.Plan.Build()
     dump.free = plan.free
     dump.readySlots = plan.readySlots
+    dump.hiddenQuests = plan.hidden
 
     for _, quest in ipairs(plan.all) do
         local info = Data.Static(quest.id)
@@ -370,7 +371,10 @@ function Data.DebugDump()
         dump.quests[#dump.quests + 1] = entry
     end
 
-    dump.current = plan.current
+    -- The quest the arrow points at right now (set by the open window, not by
+    -- the plan rebuilt above).
+    local live = ns.IsOpen() and ns.state.plan or nil
+    dump.current = live and live.current or nil
     dump.player = ns.Geo.PlayerDebug()
 
     local bags = Data.ScanBags()
