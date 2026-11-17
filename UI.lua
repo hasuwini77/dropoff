@@ -8,6 +8,8 @@ ns.UI = UI
 
 local WIDTH, PAD = 330, 12
 local ROW_HEIGHT, HEADER_HEIGHT, NOTE_HEIGHT = 36, 20, 16
+local INNER = WIDTH - 2 * PAD            -- usable width inside the padding
+local TEXT_WIDTH = INNER - 28 - 8 - 62   -- row text: minus icon, gap and the right column
 local ICON_QUEST = "Interface\\Icons\\INV_Misc_Note_01"
 local ICON_UNKNOWN = "Interface\\Icons\\INV_Misc_QuestionMark"
 
@@ -65,7 +67,7 @@ end
 
 local function NewRow()
     local row = CreateFrame("Button", nil, frame)
-    row:SetHeight(ROW_HEIGHT)
+    row:SetSize(INNER, ROW_HEIGHT)
 
     row.marker = row:CreateTexture(nil, "BACKGROUND")
     row.marker:SetPoint("TOPLEFT", row, "TOPLEFT", -4, 0)
@@ -91,13 +93,13 @@ local function NewRow()
 
     row.title = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
     row.title:SetPoint("TOPLEFT", row.icon, "TOPRIGHT", 8, -1)
-    row.title:SetPoint("RIGHT", row, "RIGHT", -62, 0)
+    row.title:SetWidth(TEXT_WIDTH)
     row.title:SetJustifyH("LEFT")
     row.title:SetWordWrap(false)
 
     row.sub = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.sub:SetPoint("BOTTOMLEFT", row.icon, "BOTTOMRIGHT", 8, 1)
-    row.sub:SetPoint("RIGHT", row, "RIGHT", -62, 0)
+    row.sub:SetWidth(TEXT_WIDTH)
     row.sub:SetJustifyH("LEFT")
     row.sub:SetWordWrap(false)
 
@@ -113,6 +115,7 @@ local function NewLabel()
     local label = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
     label:SetJustifyH("LEFT")
     label:SetWordWrap(false)
+    label:SetWidth(INNER)
     return label
 end
 
@@ -146,7 +149,7 @@ local function Build()
 
     frame.summary = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     frame.summary:SetPoint("TOPLEFT", frame.title, "BOTTOMLEFT", 0, -4)
-    frame.summary:SetPoint("RIGHT", frame, "RIGHT", -PAD, 0)
+    frame.summary:SetWidth(INNER - 20)
     frame.summary:SetJustifyH("LEFT")
     frame.summary:SetWordWrap(false)
 
@@ -288,7 +291,6 @@ function UI.Render(plan)
             row.data = line
             row:ClearAllPoints()
             row:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, y)
-            row:SetPoint("RIGHT", frame, "RIGHT", -PAD, 0)
             row.icon:SetTexture(line.icon)
             row.icon:SetAlpha(line.dim and 0.6 or 1)
             row.title:SetText(line.title)
@@ -309,7 +311,6 @@ function UI.Render(plan)
             end
             label:ClearAllPoints()
             label:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", PAD, y - line.height + 4)
-            label:SetPoint("RIGHT", frame, "RIGHT", -PAD, 0)
             label:SetText(line.text)
             label:Show()
         end
