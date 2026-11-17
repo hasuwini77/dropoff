@@ -9,9 +9,13 @@ ns.UI = UI
 local WIDTH, PAD = 330, 12
 local ROW_HEIGHT, HEADER_HEIGHT, NOTE_HEIGHT = 36, 20, 16
 local INNER = WIDTH - 2 * PAD            -- usable width inside the padding
-local TEXT_WIDTH = INNER - 28 - 8 - 62   -- row text: minus icon, gap and the right column
+local MAP_BUTTON, MAP_GAP = 20, 6        -- "show on the map" button at the right of a row
+local RIGHT_INSET = MAP_BUTTON + MAP_GAP
+-- Row text: minus icon, gap, the right column and the map button.
+local TEXT_WIDTH = INNER - 28 - 8 - 62 - RIGHT_INSET
 local ICON_QUEST = "Interface\\Icons\\INV_Misc_Note_01"
 local ICON_UNKNOWN = "Interface\\Icons\\INV_Misc_QuestionMark"
+local ICON_MAP = "Interface\\Icons\\INV_Misc_Map_01"
 
 -- How many rows each section may show before collapsing into "+N more".
 local LIMIT = { ready = 8, readyNoItems = 4, progress = 4, orphans = 4 }
@@ -84,11 +88,11 @@ local function NewRow()
     row.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
 
     row.right = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    row.right:SetPoint("TOPRIGHT", row, "TOPRIGHT", 0, -5)
+    row.right:SetPoint("TOPRIGHT", row, "TOPRIGHT", -RIGHT_INSET, -5)
     row.right:SetJustifyH("RIGHT")
 
     row.badge = row:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
-    row.badge:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", 0, 5)
+    row.badge:SetPoint("BOTTOMRIGHT", row, "BOTTOMRIGHT", -RIGHT_INSET, 5)
     row.badge:SetJustifyH("RIGHT")
 
     row.title = row:CreateFontString(nil, "OVERLAY", "GameFontNormal")
@@ -102,6 +106,29 @@ local function NewRow()
     row.sub:SetWidth(TEXT_WIDTH)
     row.sub:SetJustifyH("LEFT")
     row.sub:SetWordWrap(false)
+
+    -- Map button: makes this quest the target and opens the world map on it.
+    local map = CreateFrame("Button", nil, row)
+    row.map = map
+    map:SetSize(MAP_BUTTON, MAP_BUTTON)
+    map:SetPoint("RIGHT", row, "RIGHT", 0, 0)
+    map.icon = map:CreateTexture(nil, "ARTWORK")
+    map.icon:SetAllPoints(map)
+    map.icon:SetTexture(ICON_MAP)
+    map.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    map.glow = map:CreateTexture(nil, "HIGHLIGHT")
+    map.glow:SetAllPoints(map)
+    map.glow:SetColorTexture(1, 1, 1, 0.25)
+    map:SetScript("OnClick", function()
+        if row.data and row.data.questID then ns.ShowOnMap(row.data.questID) end
+    end)
+    map:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(L.TIP_SHOW, 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    map:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
     row:SetScript("OnEnter", ShowTooltip)
     row:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
@@ -308,6 +335,7 @@ function UI.Render(plan)
             row.badge:SetText(line.badge)
             Colour(row.badge, line.badgeColour)
             row.marker:SetShown(line.current and true or false)
+            row.map:SetShown(line.canPin and true or false)
             row:Show()
         else
             usedLabels = usedLabels + 1
@@ -333,6 +361,11 @@ end
 ---------------------------------------------------------------------------
 -- Visibility
 ---------------------------------------------------------------------------
+
+-- For the tests: the row widgets currently drawn, top to bottom.
+function UI.Rows()
+    return rows
+end
 
 function UI.IsShown()
     return frame ~= nil and frame:IsShown() and true or false
