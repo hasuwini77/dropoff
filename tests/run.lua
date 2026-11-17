@@ -233,9 +233,15 @@ local function InstallGlobals()
             end
         end
         C_QuestLog = {
-            GetNumQuestLogEntries = function() return #world.quests + 1, #world.quests end,
+            GetNumQuestLogEntries = function()
+                -- Like the game: a collapsed header takes its quests out of the
+                -- visible lines but not out of the quest count.
+                if world.collapsed then return 1, #world.quests end
+                return #world.quests + 1, #world.quests
+            end,
             GetInfo = function(index)
-                if index == 1 then return { isHeader = true, title = "Zone" } end
+                if index == 1 then return { isHeader = true, isCollapsed = world.collapsed, title = "Zone" } end
+                if world.collapsed then return nil end
                 local quest = world.quests[index - 1]
                 if not quest then return nil end
                 return { questID = quest.id, title = quest.title, level = 10, isHeader = false, isHidden = quest.hidden }
@@ -269,6 +275,7 @@ local function InstallGlobals()
             return out
         end,
         GetAreaInfo = function(areaId)
+            world.areaLookups = (world.areaLookups or 0) + 1
             local mapId = AREA_TO_MAP[areaId]
             return mapId and MAPS[mapId].name or nil
         end,
@@ -892,6 +899,63 @@ test("window reopens after a reload when it was open", function()
     check(not ns.IsOpen(), "waits for other addons")
     Advance(4)
     check(ns.IsOpen(), "reopened")
+end)
+
+test("quests under a collapsed header are reported, not silently dropped", function()
+    Scene()
+    world.collapsed = true
+    local ns = Load()
+    local plan = ns.Plan.Build()
+    eq(#plan.ready, 0, "nothing readable")
+    eq(plan.hidden, 7, "hidden quests counted")
+    local found = false
+    for _, line in ipairs(ns.UI.Lines(plan)) do
+        if line.kind == "label" and line.text == ns.L.HIDDEN_QUESTS:format(7) then found = true end
+    end
+    check(found, "window says so")
+    world.chat = {}
+    SlashCmdList.DROPOFF("list")
+    check(ChatHas(ns.L.HIDDEN_QUESTS:format(7)), "list says so")
+
+    world.collapsed = false
+    eq(ns.Plan.Build().hidden, 0, "nothing hidden once expanded")
+end)
+
+test("a database that was still loading is asked again", function()
+    Scene()
+    local rows = world.db.quests
+    world.db.quests = {}
+    local ns = Load()
+    eq(ns.Plan.Build().ready[1].target, nil, "no place while the database is empty")
+    world.db.quests = rows
+    local plan = ns.Plan.Build()
+    eq(Titles(plan.ready), "Pelts,Letter,Tusks,Report", "route once it has loaded")
+    eq(plan.ready[1].target.name, "Tanner", "place once it has loaded")
+end)
+
+test("an area nothing can place is not looked up again on every pass", function()
+    Scene()
+    world.questie = false
+    world.db.npcs[10].spawns = { [9999] = { { 50, 50 } } }
+    local ns = Load()
+    ns.Plan.Build()
+    local first = world.areaLookups
+    ns.Plan.Build()
+    eq(world.areaLookups, first, "miss remembered")
+    Advance(11)
+    ns.Plan.Build()
+    check(world.areaLookups > first, "asked again after a while")
+end)
+
+test("the snapshot records the quest the arrow points at", function()
+    Scene()
+    local ns = Load()
+    SlashCmdList.DROPOFF("debug")
+    eq(DropOffDB.snapshot.current, nil, "nothing while the window is closed")
+    ns.Toggle()
+    SlashCmdList.DROPOFF("debug")
+    eq(DropOffDB.snapshot.current, 1, "current quest while guiding")
+    eq(DropOffDB.snapshot.hiddenQuests, 0, "hidden count recorded")
 end)
 
 ---------------------------------------------------------------------------
