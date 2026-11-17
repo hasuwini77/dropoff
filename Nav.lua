@@ -112,3 +112,20 @@ function Nav.Set(target, title)
     end
     return false
 end
+
+-- Opens the world map on a zone. Returns true when the map was opened.
+function Nav.OpenMap(mapId)
+    if type(C_Map) == "table" and type(C_Map.OpenWorldMap) == "function"
+        and pcall(C_Map.OpenWorldMap, mapId) then
+        return true
+    end
+    -- Without that call: show the panel by hand, which the game blocks in combat.
+    local map = rawget(_G, "WorldMapFrame")
+    if type(map) ~= "table" or type(map.SetMapID) ~= "function" then return false end
+    if type(InCombatLockdown) == "function" and InCombatLockdown() then return false end
+    local show = rawget(_G, "ShowUIPanel")
+    return (pcall(function()
+        if type(show) == "function" then show(map) else map:Show() end
+        map:SetMapID(mapId)
+    end))
+end

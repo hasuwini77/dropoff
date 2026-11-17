@@ -39,6 +39,7 @@ L.MSG_ALERT_OFF = "bag alert off."
 L.MSG_SNAPSHOT = "snapshot saved. Type /reload to write it to disk."
 L.MSG_LIST_EMPTY = "no finished quest to turn in."
 L.MSG_HELP = "/dropoff: open or close · list · alert · debug"
+L.MSG_NO_MAP = "the map cannot be opened right now."
 
 if GetLocale and GetLocale() == "frFR" then
     L.SUMMARY = "%d à rendre · libère %d emplacements · %d libres"
@@ -73,3 +74,4 @@ if GetLocale and GetLocale() == "frFR" then
     L.MSG_LIST_EMPTY = "aucune quête terminée à rendre."
     L.MSG_HELP = "/dropoff : ouvrir ou fermer · list · alert · debug"
 end
+    L.MSG_NO_MAP = "impossible d'ouvrir la carte pour l'instant."
