@@ -120,7 +120,9 @@ local function NewRow()
     map.glow:SetAllPoints(map)
     map.glow:SetColorTexture(1, 1, 1, 0.25)
     map:SetScript("OnClick", function()
-        if row.data and row.data.questID then ns.ShowOnMap(row.data.questID) end
+        -- The rows are redrawn by the click: do not leave the tooltip behind.
+        if GameTooltip then GameTooltip:Hide() end
+        if row.data and row.data.questID and row.data.canPin then ns.ShowOnMap(row.data.questID) end
     end)
     map:SetScript("OnEnter", function(self)
         if not GameTooltip then return end
@@ -364,7 +366,11 @@ end
 
 -- For the tests: the row widgets currently drawn, top to bottom.
 function UI.Rows()
-    return rows
+    local drawn = {}
+    for _, row in ipairs(rows) do
+        if row:IsShown() then drawn[#drawn + 1] = row end
+    end
+    return drawn
 end
 
 function UI.IsShown()

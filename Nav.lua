@@ -115,17 +115,21 @@ end
 
 -- Opens the world map on a zone. Returns true when the map was opened.
 function Nav.OpenMap(mapId)
+    local map = rawget(_G, "WorldMapFrame")
+    local hasPanel = type(map) == "table" and type(map.IsShown) == "function"
     if type(C_Map) == "table" and type(C_Map.OpenWorldMap) == "function"
         and pcall(C_Map.OpenWorldMap, mapId) then
-        return true
+        -- A call that did not throw may still have done nothing (combat).
+        if not hasPanel or map:IsShown() then return true end
     end
-    -- Without that call: show the panel by hand, which the game blocks in combat.
-    local map = rawget(_G, "WorldMapFrame")
-    if type(map) ~= "table" or type(map.SetMapID) ~= "function" then return false end
+    -- By hand: show the panel, which the game blocks in combat.
+    if not hasPanel or type(map.SetMapID) ~= "function" then return false end
     if type(InCombatLockdown) == "function" and InCombatLockdown() then return false end
     local show = rawget(_G, "ShowUIPanel")
-    return (pcall(function()
+    local shown = pcall(function()
         if type(show) == "function" then show(map) else map:Show() end
-        map:SetMapID(mapId)
-    end))
+    end)
+    -- A panel that opened on the wrong zone is still an open map.
+    if shown then pcall(map.SetMapID, map, mapId) end
+    return shown
 end

@@ -743,15 +743,23 @@ end)
 test("the map button falls back to the map panel, and says so when it cannot", function()
     Scene()
     local ns = Load()
-    C_Map.OpenWorldMap = nil
+    C_Map.OpenWorldMap = function() end   -- does not throw, opens nothing
     WorldMapFrame = { shown = false }
+    function WorldMapFrame:IsShown() return self.shown end
     function WorldMapFrame:Show() self.shown = true end
     function WorldMapFrame:SetMapID(mapId) self.mapId = mapId end
     ns.Toggle()
     ns.ShowOnMap(1)
-    check(WorldMapFrame.shown, "panel shown")
+    check(WorldMapFrame.shown, "panel shown by hand when the call opened nothing")
     eq(WorldMapFrame.mapId, 1411, "panel set to the zone")
 
+    WorldMapFrame.shown = false
+    function WorldMapFrame:SetMapID() error("bad map") end
+    world.chat = {}
+    ns.ShowOnMap(1)
+    check(WorldMapFrame.shown and not ChatHas(ns.L.MSG_NO_MAP), "an open map on the wrong zone is not reported as a failure")
+
+    C_Map.OpenWorldMap = nil
     WorldMapFrame = nil
     world.chat = {}
     ns.ShowOnMap(1)
