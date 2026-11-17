@@ -39,8 +39,14 @@ end
 -- Area ID -> UI map ID
 ---------------------------------------------------------------------------
 
-local areaToMap = {}
-local nameIndex
+local RETRY = 10  -- seconds before asking again about something that failed
+
+local areaToMap, missAt = {}, {}
+local nameIndex, nameIndexAt
+
+local function Clock()
+    return type(GetTime) == "function" and GetTime() or 0
+end
 
 -- Fallback without Questie: match the area's name against the zone maps.
 local function BuildNameIndex()
@@ -67,9 +73,22 @@ local function BuildNameIndex()
     return index
 end
 
+-- The index is built once. While it cannot be built (player map unknown at
+-- login), it is retried every RETRY seconds, not for every spawn point.
+local function NameIndex()
+    if nameIndex then return nameIndex end
+    local now = Clock()
+    if nameIndexAt and now - nameIndexAt < RETRY then return nil end
+    nameIndexAt = now
+    nameIndex = BuildNameIndex()
+    return nameIndex
+end
+
 function Geo.MapForArea(areaId)
     local known = areaToMap[areaId]
     if known then return known end
+    local now = Clock()
+    if missAt[areaId] and now - missAt[areaId] < RETRY then return nil end
 
     local mapId
     local zones = ZoneDB()
@@ -80,12 +99,16 @@ function Geo.MapForArea(areaId)
     if not mapId and C_Map and C_Map.GetAreaInfo then
         local name = Try(C_Map.GetAreaInfo, areaId)
         if type(name) == "string" then
-            nameIndex = nameIndex or BuildNameIndex()
-            mapId = nameIndex and nameIndex[name] or nil
+            local index = NameIndex()
+            mapId = index and index[name] or nil
         end
     end
 
-    if mapId then areaToMap[areaId] = mapId end
+    if mapId then
+        areaToMap[areaId], missAt[areaId] = mapId, nil
+    else
+        missAt[areaId] = now
+    end
     return mapId
 end
 
