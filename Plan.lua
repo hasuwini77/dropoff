@@ -78,7 +78,7 @@ end
 
 function Plan.Build()
     local bags, free = Data.ScanBags()
-    local quests = Data.ReadQuestLog()
+    local quests, hidden = Data.ReadQuestLog()
     local tied = {}
     Geo.BeginPass()
 
@@ -166,6 +166,7 @@ function Plan.Build()
         free = free,
         readySlots = readySlots,
         readyWithItems = readyWithItems,
+        hidden = hidden or 0,
         hasDB = Data.DB() ~= nil,
     }
 end

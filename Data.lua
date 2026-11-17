@@ -182,11 +182,28 @@ end
 -- Quest log
 ---------------------------------------------------------------------------
 
+-- Quests the log API does not hand out: where the count covers only the
+-- visible lines, everything under a collapsed zone header is missing.
+local function HiddenCount(collapsed, total, seen)
+    if collapsed and type(total) == "number" and not Secret(total) and total > seen then
+        return total - seen
+    end
+    return 0
+end
+
 local function ModernLog()
     local quests = {}
-    local shown = Try(C_QuestLog.GetNumQuestLogEntries) or 0
-    for index = 1, shown do
+    local shown, total = Try(C_QuestLog.GetNumQuestLogEntries)
+    local collapsed, seen = false, 0
+    for index = 1, type(shown) == "number" and shown or 0 do
         local info = Try(C_QuestLog.GetInfo, index)
+        if type(info) == "table" then
+            if info.isHeader then
+                if info.isCollapsed then collapsed = true end
+            else
+                seen = seen + 1
+            end
+        end
         if type(info) == "table" and not info.isHeader and not info.isHidden
             and type(info.questID) == "number" and info.questID > 0 then
             local questID = info.questID
@@ -213,15 +230,21 @@ local function ModernLog()
             quests[#quests + 1] = quest
         end
     end
-    return quests
+    return quests, HiddenCount(collapsed, total, seen)
 end
 
 local function LegacyLog()
     local quests = {}
     local getTitle = rawget(_G, "GetQuestLogTitle")
-    local shown = Try(rawget(_G, "GetNumQuestLogEntries")) or 0
-    for index = 1, shown do
-        local title, level, _, isHeader, _, isComplete, _, questID = Try(getTitle, index)
+    local shown, total = Try(rawget(_G, "GetNumQuestLogEntries"))
+    local collapsed, seen = false, 0
+    for index = 1, type(shown) == "number" and shown or 0 do
+        local title, level, _, isHeader, isCollapsed, isComplete, _, questID = Try(getTitle, index)
+        if title and isHeader then
+            if isCollapsed then collapsed = true end
+        elseif title then
+            seen = seen + 1
+        end
         if title and not isHeader and type(questID) == "number" and questID > 0 then
             local quest = {
                 id = questID, title = title, level = level,
@@ -241,13 +264,14 @@ local function LegacyLog()
             quests[#quests + 1] = quest
         end
     end
-    return quests
+    return quests, HiddenCount(collapsed, total, seen)
 end
 
+-- Returns the quests, and how many more sit unread under collapsed headers.
 function Data.ReadQuestLog()
     if C_QuestLog and C_QuestLog.GetInfo and C_QuestLog.GetNumQuestLogEntries then return ModernLog() end
     if rawget(_G, "GetQuestLogTitle") then return LegacyLog() end
-    return {}
+    return {}, 0
 end
 
 -- Can this quest be handed in right now?

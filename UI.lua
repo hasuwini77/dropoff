@@ -204,6 +204,8 @@ function UI.Lines(plan)
     local function header(text) lines[#lines + 1] = { kind = "label", text = text, height = HEADER_HEIGHT } end
     local function note(text) lines[#lines + 1] = { kind = "label", text = text, height = NOTE_HEIGHT } end
 
+    if (plan.hidden or 0) > 0 then note(L.HIDDEN_QUESTS:format(plan.hidden)) end
+
     local withItems, withoutItems = {}, {}
     for _, quest in ipairs(plan.ready) do
         local bucket = quest.slots > 0 and withItems or withoutItems

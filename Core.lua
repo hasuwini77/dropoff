@@ -210,6 +210,7 @@ end
 
 local function PrintList()
     local plan = ns.Refresh()
+    if plan and plan.hidden > 0 then ns.Print(L.HIDDEN_QUESTS:format(plan.hidden)) end
     if not plan or #plan.ready == 0 then
         ns.Print(L.MSG_LIST_EMPTY)
         return
