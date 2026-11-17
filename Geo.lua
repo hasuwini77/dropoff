@@ -135,6 +135,16 @@ function Geo.BeginPass()
     end
 end
 
+-- For the debug snapshot: where the last pass thought the player was.
+function Geo.PlayerDebug()
+    return {
+        known = player.x ~= nil,
+        via = player.hbd and "hbd" or player.x and "native" or nil,
+        x = player.x, y = player.y, instance = player.instance,
+        map = C_Map and Try(C_Map.GetBestMapForUnit, "player"),
+    }
+end
+
 -- Yards from the player to a map point (x, y in 0..1).
 -- Returns nil when unknown, plus true when the point is on another continent.
 function Geo.Distance(mapId, x, y)

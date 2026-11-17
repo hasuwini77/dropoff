@@ -82,6 +82,9 @@ local function Widget()
         end
     end
     function widget:IsShown() return self.shown end
+    -- The whole UI hiding (Alt+Z): OnHide fires but the frame stays "shown".
+    function widget:ParentHidden() if self.scripts.OnHide then self.scripts.OnHide(self) end end
+    function widget:ParentShown() if self.scripts.OnShow then self.scripts.OnShow(self) end end
     function widget:SetShown(value) if value then self:Show() else self:Hide() end end
     function widget:SetText(text) self.text = text end
     function widget:GetText() return self.text end
@@ -678,6 +681,18 @@ test("the close button stops the guidance too", function()
     eq(#LiveWaypoints(), 0, "waypoint removed")
 end)
 
+test("hiding the whole UI keeps turn-in mode", function()
+    Scene()
+    local ns = Load()
+    ns.Toggle()
+    DropOffFrame:ParentHidden()
+    eq(#LiveWaypoints(), 1, "waypoint kept")
+    eq(DropOffCharDB.open, true, "still open")
+    DropOffFrame:ParentShown()
+    Advance(10)
+    eq(world.waypointAdds, 1, "no duplicate waypoint")
+end)
+
 test("a waypoint removed by hand is not forced back", function()
     Scene()
     local ns = Load()
@@ -770,6 +785,8 @@ test("slash commands", function()
     eq(#DropOffDB.snapshot.quests, 7, "snapshot covers the whole log")
     eq(DropOffDB.snapshot.api.questieDB, true, "snapshot records the database")
     check(DropOffDB.snapshot.error == nil, "snapshot built without error")
+    eq(DropOffDB.snapshot.nav.mode, "tomtom", "snapshot records the navigation mode")
+    eq(DropOffDB.snapshot.player.via, "hbd", "snapshot records the position source")
 
     world.chat = {}
     SlashCmdList.DROPOFF("nonsense")

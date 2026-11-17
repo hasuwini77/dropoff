@@ -21,6 +21,17 @@ local function NativeAvailable()
         and type(UiMapPoint) == "table" and type(UiMapPoint.CreateFromCoordinates) == "function"
 end
 
+-- For the debug snapshot: what is currently placed, if anything.
+function Nav.State()
+    return {
+        mode = Nav.Mode(),
+        placed = state.key ~= nil,
+        via = state.uid and "tomtom" or state.native and "native" or nil,
+        key = state.key,
+        failedKey = state.failedKey,
+    }
+end
+
 function Nav.Mode()
     if TomTomAddon() then return "tomtom" end
     if NativeAvailable() then return "native" end

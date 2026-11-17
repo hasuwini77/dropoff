@@ -308,8 +308,10 @@ function Data.DebugDump()
             userWaypoint = Has(C_Map, "SetUserWaypoint"),
             superTrack = type(C_SuperTrack) == "table" and Has(C_SuperTrack, "SetSuperTrackedUserWaypoint"),
             containerQuestInfo = Has(C_Container, "GetContainerItemQuestInfo"),
-            nav = ns.Nav.Mode(),
+            readyForTurnIn = Has(C_QuestLog, "ReadyForTurnIn"),
         },
+        nav = ns.Nav.State(),
+        windowOpen = ns.IsOpen(),
         quests = {},
         bagItems = {},
     }
@@ -328,6 +330,8 @@ function Data.DebugDump()
             dbHasTrigger = info and info.hasTrigger or nil,
             finishers = info and info.finishers or nil,
             nativeWaypoint = { Data.NativeWaypoint(quest.id) },
+            -- What the client itself says, to check the "ready" rule against.
+            readyForTurnIn = C_QuestLog and Try(C_QuestLog.ReadyForTurnIn, quest.id),
             items = {},
         }
         for _, item in ipairs(quest.items) do
@@ -342,6 +346,9 @@ function Data.DebugDump()
         end
         dump.quests[#dump.quests + 1] = entry
     end
+
+    dump.current = plan.current
+    dump.player = ns.Geo.PlayerDebug()
 
     local bags = Data.ScanBags()
     for itemID, item in pairs(bags) do

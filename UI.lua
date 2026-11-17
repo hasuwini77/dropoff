@@ -162,7 +162,12 @@ local function Build()
     frame:Hide()
     RestorePosition()
     frame:SetScript("OnShow", function() ns.OnShown() end)
-    frame:SetScript("OnHide", function() ns.OnHidden() end)
+    frame:SetScript("OnHide", function(self)
+        -- OnHide also fires when the whole UI hides (Alt+Z, cinematics) while
+        -- the window itself stays shown: that is not leaving turn-in mode.
+        if self:IsShown() then return end
+        ns.OnHidden()
+    end)
 end
 
 ---------------------------------------------------------------------------
