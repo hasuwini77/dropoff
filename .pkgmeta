@@ -1,0 +1,8 @@
+package-as: DropOff
+
+ignore:
+  - tests
+  - tools
+  - docs
+  - README.md
+  - .github

@@ -1,0 +1,23 @@
+## Interface: 16001
+## Title: DropOff
+## Notes: Guides you to turn in finished quests, nearest first, to free bag space.
+## Notes-frFR: Te guide pour rendre tes quêtes terminées, les plus proches d'abord, et libérer tes sacs.
+## Author: Edwin (Team Baguette)
+## Version: 0.1.0
+## IconTexture: Interface\Icons\INV_Misc_Bag_08
+## Category: Quests
+## Category-frFR: Quêtes
+## OptionalDeps: Questie, QuestieDB, TomTom
+## SavedVariables: DropOffDB
+## SavedVariablesPerCharacter: DropOffCharDB
+## AddonCompartmentFunc: DropOff_OnAddonCompartmentClick
+## X-License: MIT
+## X-Website: https://github.com/hasuwini77/dropoff
+
+Locales.lua
+Core.lua
+Data.lua
+Geo.lua
+Plan.lua
+Nav.lua
+UI.lua
