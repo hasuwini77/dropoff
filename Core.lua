@@ -121,7 +121,7 @@ local function NextStop(quest, label, carried)
     local first = legs and ns.Route.FirstLeg(legs, carried)
     -- On a walk with a real path the arrow goes from turn to turn, round
     -- what is in the way, and the hand-in keeps its pin.
-    local turn = first and not carried and ns.Walk.Aim(legs[first])
+    local turn = first and not carried and ns.Walk and ns.Walk.Aim(legs[first])
     if turn then
         local mapId, x, y = ns.Geo.Place(turn.continent, turn.x, turn.y)
         if mapId then
@@ -147,7 +147,9 @@ local function UpdateGuidance(plan, carried)
     -- The real walks of this trip only, and after the list was put in order:
     -- the order compares straight lines with straight lines. While something
     -- carries the player the trip is the one made before boarding.
-    if not carried then ns.Walk.Use(quest and quest.target) end
+    -- (ns.Walk is missing after an update followed by /reload: the game
+    -- reads a new file only when it is started again.)
+    if not carried and ns.Walk then ns.Walk.Use(quest and quest.target) end
     if quest then
         local label = quest.target.name and (quest.title .. " (" .. quest.target.name .. ")") or quest.title
         ns.Nav.Set(NextStop(quest, label, carried))
@@ -287,7 +289,7 @@ end
 function ns.OnHidden()
     DropOffCharDB.open = false
     if ticker then ticker:Cancel(); ticker = nil end
-    ns.Walk.Stop()
+    if ns.Walk then ns.Walk.Stop() end
     ns.Nav.Clear()
     ns.Trail.Clear()
     ns.state.pinned = nil

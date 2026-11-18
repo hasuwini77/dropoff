@@ -386,7 +386,7 @@ function Data.DebugDump()
         openMap = type(rawget(_G, "OpenMapAPI")) == "table" and OpenMapAPI.version or nil,
     }
     dump.passes = ns.Route.PassState()
-    dump.walk = ns.Walk.State()
+    dump.walk = ns.Walk and ns.Walk.State() or nil
     dump.window = {
         compact = ns.UI.IsCompact(),
         minimapIcon = ns.MinimapButton.State(),
