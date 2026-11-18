@@ -1239,6 +1239,53 @@ test("the quickest hand-in comes first, whatever the continent", function()
     eq(Titles(ns.state.plan.ready), "Crates,King of the Foulweald", "300 yd away before a 16 minute trip")
 end)
 
+test("a faction not known at login does not leave the network empty", function()
+    TravelScene()
+    world.faction = nil
+    local ns = Load()
+    ns.Toggle()
+    local legs = ns.state.plan.ready[1].target.legs
+    check(not legs or not Kinds(legs):find("zeppelin", 1, true), "no faction yet: no zeppelin")
+    world.faction = "Horde"
+    Advance(2)
+    eq(Kinds(ns.state.plan.ready[1].target.legs), "fly,walk,zeppelin,walk,fly,walk", "the network is rebuilt once it is known")
+end)
+
+test("order stays consistent when only some hand-ins have a travel time", function()
+    TravelScene()
+    world.items[200] = { name = "Crate", class = 12 }
+    world.items[300] = { name = "Barrel", class = 12 }
+    Put(200, 1); Put(300, 1)
+    world.quests[2] = { id = 2, title = "Crates", complete = true, objectives = { { "Crate: 1/1", "item", true } } }
+    world.quests[3] = { id = 3, title = "Barrels", complete = true, objectives = { { "Barrel: 1/1", "item", true } } }
+    world.db.quests[2] = { objectives = { nil, nil, { { 200 } } }, finishedBy = { { 20 } } }
+    world.db.quests[3] = { objectives = { nil, nil, { { 300 } } }, finishedBy = { { 30 } } }
+    local nx, ny = OnMap(1417, HAMMERFALL[1] - 300, HAMMERFALL[2])
+    world.db.npcs[20] = { name = "Quartermaster", spawns = { [45] = { { nx * 100, ny * 100 } } }, friendlyToFaction = "H" }
+    -- Elwynn in the mock sits on a continent nothing reaches from its fake coordinates.
+    world.db.npcs[30] = { name = "Cooper", spawns = { [12] = { { 50, 50 } } }, friendlyToFaction = "H" }
+    MAPS[1429].instance = 9
+    local ns = Load()
+    ns.Toggle()
+    MAPS[1429].instance = 0
+    eq(Titles(ns.state.plan.ready), "Crates,King of the Foulweald,Barrels", "timed trips first, the unreachable one last")
+    check(not ChatHas("error"), "and the sort does not throw")
+end)
+
+test("a hand-in with a flight shows minutes even on the same continent", function()
+    TravelScene()
+    local nx, ny = OnMap(1415, 1568.6, 300)   -- next to Undercity's flight master
+    AREA_TO_MAP[85] = 1415
+    world.db.npcs[10].spawns = { [85] = { { nx * 100, ny * 100 } } }
+    local ns = Load()
+    ns.Toggle()
+    AREA_TO_MAP[85] = nil
+    local target = ns.state.plan.ready[1].target
+    eq(Kinds(target.legs), "fly,walk", "a flight then a walk")
+    check(target.dist ~= nil, "the straight distance is known")
+    check(ns.UI.Rows()[1].right:GetText():find("~%d+ min"), "but the row tells the trip in minutes")
+end)
+
 test("the flight map tells which flight masters are known", function()
     TravelScene()
     local ns = Load()
@@ -1268,6 +1315,12 @@ test("the flight map tells which flight masters are known", function()
     world.taxiNodes = {}
     Fire(ns, "TAXIMAP_OPENED")
     check(DropOffCharDB.flights[11], "an empty flight map changes nothing")
+
+    -- A list without the master the player stands at is not a full read.
+    world.taxiNodes = { { nodeID = 13, state = 1 } }
+    Fire(ns, "TAXIMAP_OPENED")
+    check(DropOffCharDB.flights[13] and DropOffCharDB.flights[11] and DropOffCharDB.flights[17],
+        "a partial list adds, it does not remove")
 end)
 
 test("an Alliance character takes boats, never a zeppelin", function()
@@ -1300,6 +1353,10 @@ test("the plan is kept as it was while on a flight path", function()
     world.onTaxi = false
     Advance(2)
     check(ns.state.plan ~= before, "planning resumes on landing")
+
+    local stale = { { kind = "walk", from = {}, to = { node = 17 } }, { kind = "fly", from = {}, to = { node = 11 } } }
+    eq(ns.Route.NextPlace(stale, true).node, 11, "in the air, a plan that still began with the walk points at the landing")
+    eq(ns.Route.NextPlace(stale, false).node, 17, "on the ground, at the flight master")
 end)
 
 test("the route is drawn on the map and cleared with the window", function()
