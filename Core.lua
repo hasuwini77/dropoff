@@ -107,6 +107,8 @@ local function PickTarget(plan)
 end
 
 local function DistanceText(target)
+    -- One walk along a real path (Walk.lua): its yards, as the window says.
+    if target.walk then return L.DIST_YARDS:format(math.floor(target.walk + 0.5)) end
     if target.dist then return L.DIST_YARDS:format(math.floor(target.dist + 0.5)) end
     return target.zone or L.DIST_FAR
 end
