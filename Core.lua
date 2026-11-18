@@ -108,12 +108,28 @@ local function DistanceText(target)
     return target.zone or L.DIST_FAR
 end
 
-local function UpdateGuidance(plan)
+-- Where the arrow points for this quest and what it says: the next place of
+-- the trip when it has several legs (a flight master, a dock), else the
+-- hand-in itself.
+local function NextStop(quest, label, flying)
+    local legs = quest.target.legs
+    if legs and #legs > 1 then
+        local place = ns.Route.NextPlace(legs, flying)
+        local mapId, x, y = ns.Geo.Place(place.continent, place.x, place.y)
+        if mapId then
+            return { mapId = mapId, x = x, y = y }, ns.Route.StepText(legs, 1, quest.target.name, true)
+        end
+    end
+    return quest.target, label
+end
+
+local function UpdateGuidance(plan, flying)
     local quest = PickTarget(plan)
     plan.current = quest and quest.id or nil
     if quest then
         local label = quest.target.name and (quest.title .. " (" .. quest.target.name .. ")") or quest.title
-        ns.Nav.Set(quest.target, label)
+        ns.Nav.Set(NextStop(quest, label, flying))
+        ns.Trail.Show(quest.target.legs)
         local now = Now()
         if ns.state.announcedQuest ~= quest.id and now - ns.state.lastAnnounce >= ANNOUNCE_EVERY then
             ns.state.announcedQuest = quest.id
@@ -122,6 +138,7 @@ local function UpdateGuidance(plan)
         end
     else
         ns.Nav.Clear()
+        ns.Trail.Clear()
         if ns.state.hadTarget and #plan.ready == 0 then ns.Print(L.MSG_DONE) end
         ns.state.announcedQuest = nil
     end
@@ -137,8 +154,17 @@ local function MaybeAlert(plan)
     ns.Print(L.MSG_BAGS:format(plan.free, plan.readyWithItems, plan.readySlots))
 end
 
+local function OnFlight()
+    local flying = ns.Try(rawget(_G, "UnitOnTaxi"), "player")
+    return not ns.Secret(flying) and flying == true
+end
+
 function ns.Refresh()
-    local ok, plan = pcall(ns.Plan.Build)
+    -- On a flight path the route is the one chosen at take-off: planning from
+    -- mid-air would send the player back to a flight master.
+    local flying = OnFlight() and ns.state.plan ~= nil
+    local ok, plan = true, ns.state.plan
+    if not flying then ok, plan = pcall(ns.Plan.Build) end
     if not ok then
         ns.Log("plan error: %s", tostring(plan))
         if not reportedError then
@@ -150,7 +176,7 @@ function ns.Refresh()
     ns.state.plan = plan
     if ns.IsOpen() then
         local ok2, err = pcall(function()
-            UpdateGuidance(plan)
+            UpdateGuidance(plan, flying)
             ns.UI.Render(plan)
         end)
         if not ok2 then
@@ -160,7 +186,7 @@ function ns.Refresh()
                 ns.Print("error: " .. tostring(err))
             end
         end
-    else
+    elseif not flying then
         MaybeAlert(plan)
     end
     return plan
@@ -190,6 +216,7 @@ function ns.OnHidden()
     DropOffCharDB.open = false
     if ticker then ticker:Cancel(); ticker = nil end
     ns.Nav.Clear()
+    ns.Trail.Clear()
     ns.state.pinned = nil
     ns.state.announcedQuest = nil
     ns.state.hadTarget = false
@@ -284,6 +311,7 @@ local EVENTS = {
     "QUEST_REMOVED",
     "QUEST_TURNED_IN",
     "ZONE_CHANGED_NEW_AREA",
+    "TAXIMAP_OPENED",
 }
 for _, event in ipairs(EVENTS) do
     -- RegisterEvent throws for events a client does not know.
@@ -305,6 +333,13 @@ frame:SetScript("OnEvent", function(_, event, arg1)
             end)
         end
         return
+    end
+
+    if event == "TAXIMAP_OPENED" then
+        -- The flight map lists the flight masters this character knows.
+        local ok, read = pcall(ns.Route.RecordTaxiMap)
+        if not ok then ns.Log("flight map error: %s", tostring(read)) end
+        if not (ok and read) then return end
     end
 
     if ns.IsOpen() then

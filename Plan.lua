@@ -1,8 +1,8 @@
 local _, ns = ...
-local Data, Geo = ns.Data, ns.Geo
+local Data, Geo, Route = ns.Data, ns.Geo, ns.Route
 
 -- Builds the list the window shows: finished quests to hand in (holding bag
--- items first, nearest first), quests in progress that hold items, and quest
+-- items first, quickest to reach first), quests in progress that hold items, and quest
 -- items tied to nothing in the log.
 local Plan = {}
 ns.Plan = Plan
@@ -39,15 +39,24 @@ local function ResolveTarget(quest)
                      dungeon = false, friendly = true, native = true }
         end
     end
-    if best then best.zone = Geo.MapName(best.mapId) end
+    if best then
+        best.zone = Geo.MapName(best.mapId)
+        -- The trip there: seconds and legs, when the travel network reaches it.
+        local gx, gy, continent = Geo.World(best.mapId, best.x, best.y)
+        if gx then best.eta, best.legs = Route.To(gx, gy, continent) end
+    end
     return best
 end
 
 local function ByRoute(a, b)
     local aItems, bItems = a.slots > 0, b.slots > 0
     if aItems ~= bItems then return aItems end
+    local ae, be = a.target and a.target.eta, b.target and b.target.eta
     local ad, bd = a.target and a.target.dist, b.target and b.target.dist
-    if ad and bd then
+    if ae and be then
+        -- Travel time knows about flights and boats; yards do not.
+        if ae ~= be then return ae < be end
+    elseif ad and bd then
         if ad ~= bd then return ad < bd end
     elseif ad or bd then
         return ad ~= nil
@@ -81,6 +90,7 @@ function Plan.Build()
     local quests, hidden = Data.ReadQuestLog()
     local tied = {}
     Geo.BeginPass()
+    Route.Begin(Geo.PlayerWorld())
 
     -- 1. Items the database ties to each quest.
     for _, quest in ipairs(quests) do
