@@ -1634,6 +1634,113 @@ test("a zone the pass table does not know is not checked", function()
     eq(Trip(legs), "walk>goal", "the straight line too")
 end)
 
+test("each leg's seconds add up to the trip's, also from beside a pass", function()
+    local ns = DesolaceScene(KNOWN)
+    local function sum(legs)
+        local total = 0
+        for _, leg in ipairs(legs) do total = total + leg.seconds end
+        return total
+    end
+    check(ns.Route.Begin(ZORAMGAR[1], ZORAMGAR[2], 1, 1440), "from Zoram'gar")
+    local seconds, legs = ns.Route.To(GHOST_WALKER[1], GHOST_WALKER[2], 1, 1443)
+    check(math.abs(sum(legs) - seconds) < 1, "the whole trip: " .. sum(legs) .. " against " .. seconds)
+    check(ns.Route.Begin(450, 1790, 1, 1442), "from 90 yards before the pass into Desolace")
+    seconds, legs = ns.Route.To(GHOST_WALKER[1], GHOST_WALKER[2], 1, 1443)
+    eq(#legs, 1, "one walk")
+    check(math.abs(legs[1].seconds - seconds) < 1, "which carries the stretch to the pass too")
+end)
+
+test("a pass with no known zone beyond it is a plain step", function()
+    local ns = DesolaceScene(KNOWN)
+    ns.Route.Begin(-1197, 30, 1, nil)
+    local legs = {
+        { kind = "walk", from = {}, to = { pass = true, zone = 1412, zone2 = 1443 }, yards = 300, seconds = 60 },
+        { kind = "walk", from = {}, to = {}, final = true, yards = 100, seconds = 20 },
+    }
+    eq(ns.Route.StepText(legs, 1, "x", true), "Walk on into the next zone", "no name: the plain wording")
+    legs[1].enter = 1443
+    eq(ns.Route.StepText(legs, 1, "x", true), "Walk on into the next zone: Desolace", "named when known")
+end)
+
+test("French pass step", function()
+    TravelScene()
+    world.locale = "frFR"
+    local ns = Load()
+    local legs = { { kind = "walk", from = {}, to = { pass = true, zone = 1412, zone2 = 1443 }, enter = 1443, yards = 300 } }
+    eq(ns.Route.StepText(legs, 1, "x", true), "Rejoins à pied la zone suivante : Desolace", "the pass, in French")
+end)
+
+test("a map inside a zone counts as that zone", function()
+    local ns = DesolaceScene(KNOWN)
+    eq(ns.Route.Zone(1456), 1412, "a city is the zone around it")
+    eq(ns.Route.Zone(1443), 1443, "a zone is itself")
+    eq(ns.Route.Zone(1414), nil, "a continent is no zone")
+    local real = C_Map.GetMapInfo
+    C_Map.GetMapInfo = function(mapId)
+        if mapId == 5001 then return { mapID = 5001, parentMapID = 1443 } end
+        return real(mapId)
+    end
+    eq(ns.Route.Zone(5001), 1443, "a cave's map is its zone")
+    eq(ns.Route.Zone(5002), nil, "an unknown map is not")
+end)
+
+test("every dock has the zone it stands in", function()
+    local ns = DesolaceScene(KNOWN)
+    -- Where each dock of the data is: the route's name says it.
+    local expected = {
+        ["1:-1005.6:-3841.6"] = 1413, ["0:-14277.7:582.9"] = 1434, ["0:-12464:231.6"] = 1434,
+        ["1:1360.9:-4631.3"] = 1411, ["0:-3905.2:-585.8"] = 1437, ["1:-4016.4:-4740.6"] = 1445,
+        ["1:8532:1023.7"] = 1438, ["1:6594.4:759.8"] = 1439, ["0:-12406.9:211.8"] = 1434,
+        ["0:2062.6:235.3"] = 1420, ["1:1318.1:-4658"] = 1411, ["0:2062.4:293"] = 1420,
+        ["1:-4197.3:3286.6"] = 1444, ["1:-4347.8:2444.4"] = 1444, ["0:-3709.5:-575.1"] = 1437,
+        ["0:-1102.6:-554.7"] = 1424, ["1:6406.2:823.1"] = 1439, ["1:-6932.6:-4950.8"] = 1446,
+        ["0:544.8:424.2"] = 1416, ["1:-802:366.5"] = 1412, ["1:6548.3:942.2"] = 1439,
+        ["0:-8654.5:1344.4"] = 1429,
+        -- Powderfuse Port (Riverglades) and Zephras Isle: zones the table does not know.
+        ["0:-8232.3:-5800.8"] = false, ["2991:1848.3:569.1"] = false, ["2991:1952.5:1019.1"] = false,
+    }
+    -- Standing on a dock, in its zone, the trip to the far dock is the ride:
+    -- a dock given the wrong zone could not be walked onto, or off.
+    local rode = {}
+    for _, faction in ipairs({ "Horde", "Alliance" }) do
+        world.faction = faction
+        ns.Route.Reset()
+        for index, ride in ipairs(ns.TravelData.transports) do
+            local from = ride[4] .. ":" .. ride[5] .. ":" .. ride[6]
+            local to = ride[8] .. ":" .. ride[9] .. ":" .. ride[10]
+            check(expected[from] ~= nil and expected[to] ~= nil, "both docks of " .. ride[2] .. " are listed in this test")
+            if ns.Route.Begin(ride[5], ride[6], ride[4], expected[from] or nil) then
+                local _, legs = ns.Route.To(ride[9], ride[10], ride[8], expected[to] or 99999)
+                local trip = legs and Trip(legs)
+                if trip == ride[1] .. ">dock walk>goal" or (expected[from] == expected[to] and trip == "walk>goal") then
+                    rode[index] = true
+                end
+            end
+        end
+    end
+    for index, ride in ipairs(ns.TravelData.transports) do
+        check(rode[index], ride[2] .. " (" .. index .. ") is taken dock to dock by one faction at least")
+    end
+    eq(ns.Route.Zone(1416), 1416, "the Alterac Mountains are a zone")
+end)
+
+test("a flight master in an unknown zone is not walked to from a known one", function()
+    local ns = DesolaceScene(KNOWN)
+    DropOffCharDB.flightsSeen = {}   -- every flight master counts as known
+    ns.Route.Reset()
+    local hyjal
+    for id, node in pairs(ns.TravelData.nodes) do
+        if node[1]:find("Mount Hyjal", 1, true) and node[5] ~= "A" then hyjal = node end
+    end
+    check(hyjal ~= nil, "the data has a Hyjal flight master a Horde character can use")
+    check(ns.Route.Begin(hyjal[3] + 300, hyjal[4], 1, 1448), "in Felwood, 300 yards from it")
+    local _, legs = ns.Route.To(hyjal[3], hyjal[4] + 50, 1, 99999)
+    eq(Trip(legs), "walk>goal", "a hand-in there is still walked to directly")
+    check(ns.Route.Begin(hyjal[3] + 300, hyjal[4], 1, nil), "player's zone unknown too")
+    _, legs = ns.Route.To(GHOST_WALKER[1], GHOST_WALKER[2], 1, 1443)
+    check(legs ~= nil and legs[1].kind == "walk" and legs[1].to.node ~= nil, "from an unknown zone the walk to it is allowed")
+end)
+
 test("an island zone is reached by boat only", function()
     local ns = DesolaceScene(KNOWN)
     check(ns.Route.Begin(6341, 557, 1, 1439), "a Horde character in Auberdine")
