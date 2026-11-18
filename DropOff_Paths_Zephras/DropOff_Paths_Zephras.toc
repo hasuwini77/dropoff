@@ -1,0 +1,17 @@
+## Interface: 16001
+## Title: DropOff - Walking maps: Zephras Isle
+## Title-frFR: DropOff - Cartes de marche : Île de Zephras
+## Notes: Walking maps of Zephras Isle for DropOff. Loaded by DropOff at the first walk there.
+## Notes-frFR: Cartes de marche pour DropOff : Île de Zephras. DropOff les charge au premier trajet à pied là-bas.
+## Author: Cillian Berragan (Shortest Path Forever), packaged by Edwin (Team Baguette)
+## Version: 0.7.0
+## Category: Quests
+## Category-frFR: Quêtes
+## Group: DropOff
+## LoadOnDemand: 1
+## Dependencies: DropOff
+## X-License: GPL-3.0-or-later
+## X-Website: https://github.com/hasuwini77/dropoff
+
+Nav2991.lua
+Nav2991_1.lua

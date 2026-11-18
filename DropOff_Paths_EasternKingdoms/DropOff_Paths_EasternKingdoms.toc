@@ -1,0 +1,37 @@
+## Interface: 16001
+## Title: DropOff - Walking maps: Eastern Kingdoms
+## Title-frFR: DropOff - Cartes de marche : Royaumes de l'Est
+## Notes: Walking maps of Eastern Kingdoms for DropOff. Loaded by DropOff at the first walk there.
+## Notes-frFR: Cartes de marche pour DropOff : Royaumes de l'Est. DropOff les charge au premier trajet à pied là-bas.
+## Author: Cillian Berragan (Shortest Path Forever), packaged by Edwin (Team Baguette)
+## Version: 0.7.0
+## Category: Quests
+## Category-frFR: Quêtes
+## Group: DropOff
+## LoadOnDemand: 1
+## Dependencies: DropOff
+## X-License: GPL-3.0-or-later
+## X-Website: https://github.com/hasuwini77/dropoff
+
+Nav0.lua
+Nav0_1.lua
+Nav0_2.lua
+Nav0_3.lua
+Nav0_4.lua
+Nav0_5.lua
+Nav0_6.lua
+Nav0_7.lua
+Nav0_8.lua
+Nav0_9.lua
+Nav0_10.lua
+Nav0_11.lua
+Nav0_12.lua
+Nav0_13.lua
+Nav0_14.lua
+Nav0_15.lua
+Nav0_16.lua
+Nav0_17.lua
+Nav0_18.lua
+Nav0_19.lua
+Nav0_20.lua
+Nav0_21.lua

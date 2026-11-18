@@ -1,0 +1,40 @@
+## Interface: 16001
+## Title: DropOff - Walking maps: Kalimdor
+## Title-frFR: DropOff - Cartes de marche : Kalimdor
+## Notes: Walking maps of Kalimdor for DropOff. Loaded by DropOff at the first walk there.
+## Notes-frFR: Cartes de marche pour DropOff : Kalimdor. DropOff les charge au premier trajet à pied là-bas.
+## Author: Cillian Berragan (Shortest Path Forever), packaged by Edwin (Team Baguette)
+## Version: 0.7.0
+## Category: Quests
+## Category-frFR: Quêtes
+## Group: DropOff
+## LoadOnDemand: 1
+## Dependencies: DropOff
+## X-License: GPL-3.0-or-later
+## X-Website: https://github.com/hasuwini77/dropoff
+
+Nav1.lua
+Nav1_1.lua
+Nav1_2.lua
+Nav1_3.lua
+Nav1_4.lua
+Nav1_5.lua
+Nav1_6.lua
+Nav1_7.lua
+Nav1_8.lua
+Nav1_9.lua
+Nav1_10.lua
+Nav1_11.lua
+Nav1_12.lua
+Nav1_13.lua
+Nav1_14.lua
+Nav1_15.lua
+Nav1_16.lua
+Nav1_17.lua
+Nav1_18.lua
+Nav1_19.lua
+Nav1_20.lua
+Nav1_21.lua
+Nav1_22.lua
+Nav1_23.lua
+Nav1_24.lua
