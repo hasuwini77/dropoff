@@ -385,6 +385,7 @@ function Data.DebugDump()
         allTaxiNodes = Has(rawget(_G, "C_TaxiMap"), "GetAllTaxiNodes"),
         openMap = type(rawget(_G, "OpenMapAPI")) == "table" and OpenMapAPI.version or nil,
     }
+    dump.passes = ns.Route.PassState()
 
     local bags = Data.ScanBags()
     for itemID, item in pairs(bags) do

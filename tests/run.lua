@@ -117,9 +117,11 @@ end
 -- ox is the game's y (west) at the left edge, oy the game's x (north) at the
 -- top edge: a point is at game x = oy + y * size, game y = ox + x * size.
 local MAPS = {
-    [1411] = { name = "Durotar", ox = 0, oy = 0, size = 1000, instance = 1 },
-    [1413] = { name = "The Barrens", ox = 2000, oy = 0, size = 1000, instance = 1 },
-    [1429] = { name = "Elwynn Forest", ox = 0, oy = 0, size = 1000, instance = 0 },
+    -- `fake`: coordinates made up for the list tests. In the travel tests,
+    -- laid out over the real world, these three sit on a continent of their own.
+    [1411] = { name = "Durotar", ox = 0, oy = 0, size = 1000, instance = 1, fake = true },
+    [1413] = { name = "The Barrens", ox = 2000, oy = 0, size = 1000, instance = 1, fake = true },
+    [1429] = { name = "Elwynn Forest", ox = 0, oy = 0, size = 1000, instance = 0, fake = true },
     -- For the travel tests: the two continents and two zones, laid out over
     -- the real world coordinates of the travel data.
     [1415] = { name = "Eastern Kingdoms", ox = 20000, oy = 10000, size = -40000, instance = 0, continent = true },
@@ -129,6 +131,10 @@ local MAPS = {
     [1412] = { name = "Mulgore", ox = 2048, oy = -273, size = -5140, instance = 1, real = true },
     [1442] = { name = "Stonetalon Mountains", ox = 3246, oy = 2917, size = -4883, instance = 1, real = true },
     [1443] = { name = "Desolace", ox = 4233, oy = 452, size = -4500, instance = 1, real = true },
+    -- Rough ones, only there so the passes given on them can be placed: the
+    -- walk from Tarren Mill to the zeppelins of Tirisfal goes through both.
+    [1421] = { name = "Silverpine Forest", ox = 3400, oy = 1700, size = -4200, instance = 0 },
+    [1424] = { name = "Hillsbrad Foothills", ox = 1000, oy = 400, size = -3200, instance = 0 },
 }
 local AREA_TO_MAP = { [14] = 1411, [17] = 1413, [12] = 1429, [45] = 1417, [331] = 1440, [405] = 1443 }
 
@@ -139,6 +145,12 @@ local function OnMap(mapId, gx, gy)
 end
 
 local world
+
+-- The continent a map is on.
+local function Instance(map)
+    if world.travel and map.fake then return 9 end
+    return map.instance
+end
 
 local function NewWorld()
     lines = {}
@@ -167,6 +179,7 @@ local function NewWorld()
         travel = false,     -- true: plan with the real travel data
         onTaxi = false,
         taxiNodes = nil,    -- what the open flight map lists: { { nodeID, state } }
+        unplaced = {},      -- mapId -> true: the game cannot turn its points into world yards yet
         mapPins = {},       -- icon -> where the trail put it on the world map
         minimapPins = {},
     }
@@ -327,8 +340,8 @@ local function InstallGlobals()
         end,
         GetWorldPosFromMapPos = function(mapId, position)
             local map = MAPS[mapId]
-            if not map then return nil end
-            return map.instance, { x = map.oy + position.y * map.size, y = map.ox + position.x * map.size }
+            if not map or world.unplaced[mapId] then return nil end
+            return Instance(map), { x = map.oy + position.y * map.size, y = map.ox + position.x * map.size }
         end,
         GetMapPosFromWorldPos = function(_, position, mapId)
             local map = MAPS[mapId]
@@ -370,8 +383,8 @@ local function InstallGlobals()
         end
         function hbd:GetWorldCoordinatesFromZone(x, y, mapId)
             local map = MAPS[mapId]
-            if not map then return nil end
-            return map.ox + x * map.size, map.oy + y * map.size, map.instance
+            if not map or world.unplaced[mapId] then return nil end
+            return map.ox + x * map.size, map.oy + y * map.size, Instance(map)
         end
         function hbd:GetZoneCoordinatesFromWorld(x, y, mapId, anywhere)
             if not MAPS[mapId] then return nil end
@@ -1292,10 +1305,8 @@ test("order stays consistent when only some hand-ins have a travel time", functi
     world.db.npcs[20] = { name = "Quartermaster", spawns = { [45] = { { nx * 100, ny * 100 } } }, friendlyToFaction = "H" }
     -- Elwynn in the mock sits on a continent nothing reaches from its fake coordinates.
     world.db.npcs[30] = { name = "Cooper", spawns = { [12] = { { 50, 50 } } }, friendlyToFaction = "H" }
-    MAPS[1429].instance = 9
     local ns = Load()
     ns.Toggle()
-    MAPS[1429].instance = 0
     eq(Titles(ns.state.plan.ready), "Crates,King of the Foulweald,Barrels", "timed trips first, the unreachable one last")
     check(not ChatHas("error"), "and the sort does not throw")
 end)
@@ -1677,6 +1688,9 @@ end)
 
 -- Zoram'gar Outpost and Ghost Walker Post: the trip that showed the problem.
 local ZORAMGAR, GHOST_WALKER = { 3374.7, 997 }, { -1335, 1707 }
+-- Where the mock world puts the pass from Stonetalon into Desolace: (54, 5)
+-- on its Desolace map.
+local STONETALON_PASS = { 452 + 0.05 * -4500, 4233 + 0.54 * -4500 }
 -- The flight masters that character knew: no Shadowprey Village (38).
 local KNOWN = { 61, 25, 58, 29, 56, 30, 22, 17, 77, 10, 20, 11, 80, 23, 13 }
 
@@ -1765,7 +1779,7 @@ end)
 
 test("standing at a pass, the walk to it is not a step", function()
     local ns = DesolaceScene(KNOWN)
-    check(ns.Route.Begin(450, 1790, 1, 1442), "just north of the pass into Desolace")
+    check(ns.Route.Begin(STONETALON_PASS[1] + 90, STONETALON_PASS[2], 1, 1442), "just north of the pass into Desolace")
     local _, legs = ns.Route.To(GHOST_WALKER[1], GHOST_WALKER[2], 1, 1443)
     eq(Trip(legs), "walk>goal", "one walk, from where the player is")
     check(legs[1].final, "to the hand-in")
@@ -1793,7 +1807,7 @@ test("each leg's seconds add up to the trip's, also from beside a pass", functio
     check(ns.Route.Begin(ZORAMGAR[1], ZORAMGAR[2], 1, 1440), "from Zoram'gar")
     local seconds, legs = ns.Route.To(GHOST_WALKER[1], GHOST_WALKER[2], 1, 1443)
     check(math.abs(sum(legs) - seconds) < 1, "the whole trip: " .. sum(legs) .. " against " .. seconds)
-    check(ns.Route.Begin(450, 1790, 1, 1442), "from 90 yards before the pass into Desolace")
+    check(ns.Route.Begin(STONETALON_PASS[1] + 90, STONETALON_PASS[2], 1, 1442), "from 90 yards before the pass into Desolace")
     seconds, legs = ns.Route.To(GHOST_WALKER[1], GHOST_WALKER[2], 1, 1443)
     eq(#legs, 1, "one walk")
     check(math.abs(legs[1].seconds - seconds) < 1, "which carries the stretch to the pass too")
@@ -1912,10 +1926,100 @@ test("every flight master and pass of the data has a place in the zone table", f
     for index, pass in ipairs(passes.passes) do
         check(passes.zones[pass[1]] ~= nil and passes.zones[pass[1]] == passes.zones[pass[2]],
             "pass " .. index .. " joins two zones of one continent")
+        check(pass[1] ~= pass[2], "pass " .. index .. " joins two different zones")
+        if pass[3] then
+            check(pass[3] == pass[1] or pass[3] == pass[2], "pass " .. index .. " is given on the map of one of its zones")
+            check(pass[4] > 0 and pass[4] < 100 and pass[5] > 0 and pass[5] < 100, "pass " .. index .. " is on that map, in percent")
+        else
+            check(type(pass[4]) == "number" and type(pass[5]) == "number", "pass " .. index .. " is in world yards")
+        end
     end
     for city, zone in pairs(passes.cities) do
         check(passes.zones[zone] ~= nil and passes.zones[city] == nil, "city " .. city .. " stands in a zone")
     end
+end)
+
+test("every zone can be walked to from the others of its continent, but the island", function()
+    world = NewWorld()
+    world.travel = true
+    local passes = Load().TravelPasses
+    local joined = {}
+    for _, pass in ipairs(passes.passes) do
+        joined[pass[1]] = joined[pass[1]] or {}
+        joined[pass[2]] = joined[pass[2]] or {}
+        joined[pass[1]][pass[2]], joined[pass[2]][pass[1]] = true, true
+    end
+    for continent, start in pairs({ [0] = 1429, [1] = 1411 }) do
+        local reached, queue = { [start] = true }, { start }
+        while #queue > 0 do
+            local zone = table.remove(queue)
+            for other in pairs(joined[zone] or {}) do
+                if not reached[other] then
+                    reached[other] = true
+                    queue[#queue + 1] = other
+                end
+            end
+        end
+        for zone, on in pairs(passes.zones) do
+            if on == continent and zone ~= 1438 then check(reached[zone], "zone " .. zone .. " is reached on foot") end
+        end
+    end
+    check(joined[1438] == nil, "Teldrassil has no pass")
+end)
+
+test("a pass the game cannot place yet is left out, then placed", function()
+    TravelScene()
+    -- Ashenvale's map is not ready: none of its passes can be placed.
+    world.unplaced[1440] = true
+    local x, y = OnMap(1440, ZORAMGAR[1], ZORAMGAR[2])
+    world.player = { map = 1440, x = x, y = y }
+    local nx, ny = OnMap(1443, GHOST_WALKER[1], GHOST_WALKER[2])
+    world.db.npcs[10] = { name = "Nataka Longhorn", spawns = { [405] = { { nx * 100, ny * 100 } } }, friendlyToFaction = "H" }
+    local ns = Load()
+    DropOffCharDB.flights, DropOffCharDB.flightsSeen = {}, { [0] = true, [1] = true }
+    ns.Route.Reset()
+    ns.Toggle()
+    local target = ns.state.plan.ready[1].target
+    check(target.legs == nil, "no way out of Ashenvale: no trip, and no straight line across the zones")
+    -- What the mock world can place: a pass in world yards, or on a zone map
+    -- it lays out over the real world. Its made-up maps are on a continent
+    -- of their own, the other zones have no map at all.
+    local onAshenvale, placeable, misplaced = 0, 0, 0
+    for _, pass in ipairs(ns.TravelPasses.passes) do
+        local map = pass[3] and MAPS[pass[3]]
+        if pass[3] == 1440 then onAshenvale = onAshenvale + 1 end
+        if not pass[3] or (map and not map.fake) then placeable = placeable + 1 end
+        if map and map.fake then misplaced = misplaced + 1 end
+    end
+    check(onAshenvale > 0 and misplaced > 0, "the table has passes of both kinds")
+    local before = ns.Route.PassState()
+    eq(before.placed, placeable - onAshenvale, "Ashenvale's passes are not placed")
+    eq(before.misplaced, misplaced, "the ones on another continent are counted apart")
+    eq(before.waiting, before.total - before.placed - before.misplaced, "the rest is waiting")
+
+    world.unplaced[1440] = nil
+    Advance(5)
+    check(ns.state.plan.ready[1].target.legs == nil, "not asked again at once")
+    Advance(8)
+    local legs = ns.state.plan.ready[1].target.legs
+    check(legs ~= nil, "placed on a later try")
+    eq(WalksStayInZone(ns, legs, 1440), 1443, "and the walk leaves Ashenvale through them")
+    eq(ns.Route.PassState().placed, placeable, "Ashenvale's passes are placed now")
+    eq(ns.Route.PassState().tries, 1, "on the first try: 10 seconds after the build")
+    Advance(15)
+    eq(ns.Route.PassState().tries, 1, "the next try waits twice as long")
+    Advance(10)
+    eq(ns.Route.PassState().tries, 2, "then comes")
+
+    -- The mock places Durotar, the Barrens and Elwynn on a continent of their
+    -- own: a pass the game places on another continent than its zones is left out.
+    local _, _, found = ns.Geo.World(1411, 0.345, 0.425)
+    eq(found, 9, "the bridge out of Durotar is placed, on the wrong continent")
+    SlashCmdList.DROPOFF("debug")
+    eq(DropOffDB.snapshot.passes.total, #ns.TravelPasses.passes, "the snapshot counts the passes")
+    eq(DropOffDB.snapshot.passes.placed, placeable, "the ones placed")
+    eq(DropOffDB.snapshot.passes.misplaced, misplaced, "the ones on the wrong continent")
+    check(DropOffDB.snapshot.passes.tries >= 2, "and the tries")
 end)
 
 test("the snapshot records the route", function()
