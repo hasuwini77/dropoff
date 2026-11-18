@@ -63,4 +63,4 @@ DropOff reads Questie's data through the public `LibQuestieDB` API at run time a
 
 ## License
 
-MIT. `TravelData.lua` is generated from the data tables of [OpenMap](https://github.com/openmap-world/openmap), also MIT: see `LICENSES/OpenMap.txt`. `Passes.lua` holds positions taken from the chokepoint list of [Polestar](https://github.com/fitzforge/polestar), which is under the GNU GPL version 3: see `LICENSES/Polestar.txt`.
+MIT. `TravelData.lua` is generated from the data tables of [OpenMap](https://github.com/openmap-world/openmap), also MIT: see `LICENSES/OpenMap.txt`. `Passes.lua` was entered by hand.
