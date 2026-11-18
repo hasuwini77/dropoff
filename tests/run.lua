@@ -430,6 +430,7 @@ local function InstallGlobals()
             world.waypoints[uid] = true
             world.waypointAdds = world.waypointAdds + 1
             world.lastWaypoint = uid
+            if opts.crazy then world.arrow = uid end
             return uid
         end
         function TomTom:RemoveWaypoint(uid) world.waypoints[uid] = nil end
@@ -1185,9 +1186,17 @@ test("a hand-in on the other continent gets the whole trip", function()
     check(HasText(labels, "6. Go to Karang Amakkar"), "step 6: the hand-in")
     check(HasText(labels, ns.L.ROUTE_ASSUMED), "says the flights are assumed")
 
-    local waypoint = LiveWaypoints()[1]
+    local waypoint = world.arrow
     eq(waypoint.title, "Fly to Undercity", "the arrow says what to do now")
     eq(waypoint[1], 1417, "and points at the flight master here, not at the far hand-in")
+    eq(#LiveWaypoints(), 2, "two waypoints: the stop and the hand-in")
+    local handIn
+    for _, uid in ipairs(LiveWaypoints()) do
+        if uid ~= waypoint then handIn = uid end
+    end
+    eq(handIn.title, "King of the Foulweald (Karang Amakkar)", "the hand-in keeps its own pin")
+    eq(handIn[1], 1440, "on its own map")
+    check(handIn.opts.world and not handIn.opts.crazy and not handIn.opts.minimap, "on the world map only, without the arrow")
 
     local row = ns.UI.Rows()[1]
     check(row.right:GetText():find("~%d+ min"), "the row shows a travel time instead of 'far'")
@@ -1201,7 +1210,7 @@ test("the first step is the walk to the flight master", function()
     eq(legs[1].kind, "walk", "on foot first")
     eq(legs[1].to.node, 17, "to Hammerfall's flight master")
     check(HasText(LabelTexts(ns), "1. Go to the flight master: Hammerfall · 200 yd"), "with the distance")
-    eq(LiveWaypoints()[1].title, "Go to the flight master: Hammerfall", "arrow text without the distance")
+    eq(world.arrow.title, "Go to the flight master: Hammerfall", "arrow text without the distance")
 
     local adds = world.waypointAdds
     world.player.x, world.player.y = OnMap(1417, HAMMERFALL[1] - 120, HAMMERFALL[2])
@@ -1343,20 +1352,69 @@ test("the plan is kept as it was while on a flight path", function()
     local ns = Load()
     ns.Toggle()
     local before = ns.state.plan
-    eq(LiveWaypoints()[1][1], 1417, "before take-off the arrow is on the flight master")
+    eq(world.arrow[1], 1417, "before take-off the arrow is on the flight master")
     world.onTaxi = true
     world.player.x, world.player.y = OnMap(1417, 0, -2000)
     Advance(5)
     check(ns.state.plan == before, "no new plan in mid-air")
-    eq(LiveWaypoints()[1][1], 1415, "in the air the arrow is on where the flight lands")
-    eq(LiveWaypoints()[1].title, "Fly to Undercity", "same step")
+    eq(world.arrow[1], 1415, "in the air the arrow is on where the flight lands")
+    eq(world.arrow.title, "Fly to Undercity", "same step")
     world.onTaxi = false
     Advance(2)
     check(ns.state.plan ~= before, "planning resumes on landing")
 
     local stale = { { kind = "walk", from = {}, to = { node = 17 } }, { kind = "fly", from = {}, to = { node = 11 } } }
-    eq(ns.Route.NextPlace(stale, true).node, 11, "in the air, a plan that still began with the walk points at the landing")
-    eq(ns.Route.NextPlace(stale, false).node, 17, "on the ground, at the flight master")
+    eq(ns.Route.NextPlace(stale, "fly").node, 11, "in the air, a plan that still began with the walk points at the landing")
+    eq(ns.Route.NextPlace(stale, nil).node, 17, "on the ground, at the flight master")
+    eq(ns.Route.FirstLeg(stale, "ride"), nil, "no crossing in that plan")
+end)
+
+test("on a zeppelin the plan made before boarding is kept", function()
+    -- On the Undercity platform of the Orgrimmar zeppelin.
+    TravelScene()
+    world.player = { map = 1415 }
+    world.player.x, world.player.y = OnMap(1415, 2062.4, 293.0)
+    local ns = Load()
+    ns.Toggle()
+    eq(ns.state.plan.ready[1].target.legs[1].kind, "zeppelin", "on the platform: the crossing is the first step")
+    check(HasText(LabelTexts(ns), "1. Take the zeppelin to Orgrimmar"), "step 1 says so")
+
+    -- The zeppelin leaves: 60 yards in a tick and a half.
+    local before = ns.state.plan
+    world.player.x, world.player.y = OnMap(1415, 2062.4 + 60, 293.0)
+    Advance(1.5)
+    world.player.x, world.player.y = OnMap(1415, 2062.4 + 120, 293.0)
+    Advance(1.5)
+    check(ns.state.plan == before, "no new plan on board")
+    check(HasText(LabelTexts(ns), "1. Take the zeppelin to Orgrimmar"), "the step does not turn into 'go back to the zeppelin'")
+    check(not HasText(LabelTexts(ns), "Go to the zeppelin"), "no walk back")
+    eq(world.arrow[1], 1414, "the arrow is on where it lands, in Kalimdor")
+
+    -- Walking away from the platform is not a crossing.
+    TravelScene()
+    world.player = { map = 1415 }
+    world.player.x, world.player.y = OnMap(1415, 2062.4, 293.0)
+    ns = Load()
+    ns.Toggle()
+    world.player.x, world.player.y = OnMap(1415, 2062.4 + 60, 293.0)
+    Advance(9)
+    eq(ns.state.plan.ready[1].target.legs[1].kind, "walk", "on foot the plan follows the player")
+end)
+
+test("the hand-in stays marked when nothing can draw the trail", function()
+    TravelScene()
+    world.pins = false
+    local ns = Load()
+    ns.Toggle()
+    ns.ShowOnMap(1)
+    eq(world.openedMap, 1440, "the map opens on the hand-in's zone")
+    local found = false
+    for _, uid in ipairs(LiveWaypoints()) do
+        if uid[1] == 1440 then found = true end
+    end
+    check(found, "a TomTom pin is on the hand-in's map")
+    ns.Toggle()
+    eq(#LiveWaypoints(), 0, "closing removes both waypoints")
 end)
 
 test("the route is drawn on the map and cleared with the window", function()
