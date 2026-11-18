@@ -6,7 +6,9 @@ local _, ns = ...
 -- embedded here. The line is drawn on the world map's canvas itself: on
 -- OpenMap's stitched map through its API, on Blizzard's own through the
 -- coordinates of the map it shows. The world map keeps its dots under the
--- line, so the trip still shows where the line cannot be drawn.
+-- line, so the trip still shows where the line cannot be drawn. A walk with a
+-- real path (Walk.lua) is drawn along it, turn by turn; any other stretch is
+-- a straight line between its two ends.
 local Trail = {}
 ns.Trail = Trail
 
@@ -216,6 +218,23 @@ local function Follow(legs)
     end
 end
 
+-- The points a leg is drawn through: its real path, else its two ends.
+local function Through(leg)
+    if type(leg.path) == "table" and #leg.path >= 2 then return leg.path end
+    return { leg.from, leg.to }
+end
+
+local function Between(a, b)
+    local dx, dy = a.x - b.x, a.y - b.y
+    return math.sqrt(dx * dx + dy * dy)
+end
+
+local function Length(points)
+    local length = 0
+    for index = 2, #points do length = length + Between(points[index - 1], points[index]) end
+    return length
+end
+
 local function Pins()
     local stub = rawget(_G, "LibStub")
     if not stub then return nil end
@@ -277,6 +296,8 @@ local function Signature(legs)
         parts[#parts + 1] = ("%s:%d:%d:%d>%d:%d:%d"):format(leg.kind,
             from.continent, math.floor(from.x / step), math.floor(from.y / step),
             leg.to.continent, math.floor(leg.to.x), math.floor(leg.to.y))
+        -- A real path: which one, and how many of its turns are still ahead.
+        if leg.path then parts[#parts] = parts[#parts] .. ("~%d.%d"):format(leg.pathId or 0, #leg.path) end
     end
     return table.concat(parts, "|")
 end
@@ -306,11 +327,15 @@ function Trail.Show(legs)
     Trail.Clear()
     if type(CreateFrame) ~= "function" then return end
 
-    -- The line: one stretch per leg that stays on one continent.
+    -- The line: one stretch per leg that stays on one continent, and one
+    -- from each turn to the next along a real path.
     wanted, lineState.error = {}, nil
     for _, leg in ipairs(legs) do
         if leg.from.continent == leg.to.continent then
-            wanted[#wanted + 1] = { leg.from, leg.to, COLOUR[leg.kind] or COLOUR.ride }
+            local points = Through(leg)
+            for at = 2, #points do
+                wanted[#wanted + 1] = { points[at - 1], points[at], COLOUR[leg.kind] or COLOUR.ride }
+            end
         end
     end
     Lines()
@@ -324,28 +349,38 @@ function Trail.Show(legs)
     drawn = signature
 
     -- Spread the dot budget: long trips get wider gaps.
-    local wanted = 0
+    local dots = 0
     for _, leg in ipairs(legs) do
         if leg.from.continent == leg.to.continent then
-            local dx, dy = leg.to.x - leg.from.x, leg.to.y - leg.from.y
-            wanted = wanted + math.sqrt(dx * dx + dy * dy) / (SPACING[leg.kind] or RIDE_SPACING)
+            dots = dots + Length(Through(leg)) / (SPACING[leg.kind] or RIDE_SPACING)
         end
     end
-    local stretch = math.max(1, wanted / MAX_DOTS)
+    local stretch = math.max(1, dots / MAX_DOTS)
 
     for index, leg in ipairs(legs) do
         local from, to = leg.from, leg.to
         local colour = COLOUR[leg.kind] or COLOUR.ride
         if from.continent == to.continent then
-            local dx, dy = from.x - to.x, from.y - to.y
-            local length = math.sqrt(dx * dx + dy * dy)
+            local points = Through(leg)
+            local length = Length(points)
             local gap = (SPACING[leg.kind] or RIDE_SPACING) * stretch
             -- From the far end back toward the start, so the dots stay put
-            -- while the player walks along them.
+            -- while the player walks along them. `turn`: the point the dots
+            -- are heading back to, `passed`: the yards from the far end to
+            -- the point before it.
             local skip = index == 1 and NEAR_PLAYER or 0
             local at = gap
+            local turn, passed = #points - 1, 0
             while at < length - skip do
-                local point = { continent = to.continent, x = to.x + dx * at / length, y = to.y + dy * at / length }
+                local span = Between(points[turn + 1], points[turn])
+                while turn > 1 and passed + span < at do
+                    passed = passed + span
+                    turn = turn - 1
+                    span = Between(points[turn + 1], points[turn])
+                end
+                local a, b = points[turn + 1], points[turn]
+                local t = span > 0 and math.min(1, (at - passed) / span) or 0
+                local point = { continent = to.continent, x = a.x + (b.x - a.x) * t, y = a.y + (b.y - a.y) * t }
                 local dot = Dot("world")
                 Style(dot, leg.kind == "walk" and 5 or 4, colour)
                 OnWorldMap(pins, dot, point)
