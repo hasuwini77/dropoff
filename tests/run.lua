@@ -103,12 +103,26 @@ end
 ---------------------------------------------------------------------------
 
 -- UI maps: world origin of the map, yards per unit, and continent.
+-- ox is the game's y (west) at the left edge, oy the game's x (north) at the
+-- top edge: a point is at game x = oy + y * size, game y = ox + x * size.
 local MAPS = {
     [1411] = { name = "Durotar", ox = 0, oy = 0, size = 1000, instance = 1 },
     [1413] = { name = "The Barrens", ox = 2000, oy = 0, size = 1000, instance = 1 },
     [1429] = { name = "Elwynn Forest", ox = 0, oy = 0, size = 1000, instance = 0 },
+    -- For the travel tests: the two continents and two zones, laid out over
+    -- the real world coordinates of the travel data.
+    [1415] = { name = "Eastern Kingdoms", ox = 20000, oy = 10000, size = -40000, instance = 0, continent = true },
+    [1414] = { name = "Kalimdor", ox = 20000, oy = 15000, size = -40000, instance = 1, continent = true },
+    [1417] = { name = "Arathi Highlands", ox = -800, oy = 0, size = -3600, instance = 0, real = true },
+    [1440] = { name = "Ashenvale", ox = 1800, oy = 4700, size = -5800, instance = 1, real = true },
 }
-local AREA_TO_MAP = { [14] = 1411, [17] = 1413, [12] = 1429 }
+local AREA_TO_MAP = { [14] = 1411, [17] = 1413, [12] = 1429, [45] = 1417, [331] = 1440 }
+
+-- Map coordinates (0..1) of a point given in the game's world yards.
+local function OnMap(mapId, gx, gy)
+    local map = MAPS[mapId]
+    return (gy - map.ox) / map.size, (gx - map.oy) / map.size
+end
 
 local world
 
@@ -135,6 +149,11 @@ local function NewWorld()
         userWaypoint = nil,
         superTracked = false,
         clearedUserWaypoint = 0,
+        travel = false,     -- true: plan with the real travel data
+        onTaxi = false,
+        taxiNodes = nil,    -- what the open flight map lists: { { nodeID, state } }
+        mapPins = {},       -- icon -> where the trail put it on the world map
+        minimapPins = {},
     }
     return world
 end
@@ -155,6 +174,13 @@ local function InstallGlobals()
     GetBuildInfo = function() return "1.60.1", "70938", "Nov 1 2026", 16001 end
     UnitFactionGroup = function() return world.faction end
     InCombatLockdown = function() return false end
+    UnitOnTaxi = function() return world.onTaxi end
+    Enum = { FlightPathState = { Current = 0, Reachable = 1, Unreachable = 2 } }
+    GetTaxiMapID = function() return 1415 end
+    C_TaxiMap = {
+        GetAllTaxiNodes = function() return world.taxiNodes or {} end,
+        GetTaxiNodesForMap = function() return world.localNames or {} end,
+    }
     issecretvalue = function(value) return value == SECRET end
     NUM_BAG_SLOTS = 4
     UIParent = Widget()
@@ -287,7 +313,26 @@ local function InstallGlobals()
         GetWorldPosFromMapPos = function(mapId, position)
             local map = MAPS[mapId]
             if not map then return nil end
-            return map.instance, { x = map.ox + position.x * map.size, y = map.oy + position.y * map.size }
+            return map.instance, { x = map.oy + position.y * map.size, y = map.ox + position.x * map.size }
+        end,
+        GetMapPosFromWorldPos = function(_, position, mapId)
+            local map = MAPS[mapId]
+            if not map then return nil end
+            local x, y = OnMap(mapId, position.x, position.y)
+            return mapId, { x = x, y = y }
+        end,
+        -- The zone under a point of a continent map.
+        GetMapInfoAtPosition = function(mapId, x, y)
+            local parent = MAPS[mapId]
+            if not parent or not parent.continent then return nil end
+            local gx, gy = parent.oy + y * parent.size, parent.ox + x * parent.size
+            for id, map in pairs(MAPS) do
+                if map.real and map.instance == parent.instance then
+                    local zx, zy = OnMap(id, gx, gy)
+                    if zx >= 0 and zx <= 1 and zy >= 0 and zy <= 1 then return { mapID = id, name = map.name } end
+                end
+            end
+            return { mapID = mapId, name = parent.name }
         end,
         CanSetUserWaypointOnMap = function(mapId) return MAPS[mapId] ~= nil end,
         OpenWorldMap = function(mapId) world.openedMap = mapId end,
@@ -313,8 +358,25 @@ local function InstallGlobals()
             if not map then return nil end
             return map.ox + x * map.size, map.oy + y * map.size, map.instance
         end
+        function hbd:GetZoneCoordinatesFromWorld(x, y, mapId)
+            if not MAPS[mapId] then return nil end
+            return OnMap(mapId, y, x)
+        end
+        -- The pin library, recording what is on the maps.
+        local pins = {}
+        function pins:AddWorldMapIconWorld(ref, icon, instance, x, y, flag)
+            world.mapPins[icon] = { ref = ref, instance = instance, x = x, y = y, flag = flag }
+            return true
+        end
+        function pins:AddMinimapIconWorld(ref, icon, instance, x, y, floatOnEdge)
+            world.minimapPins[icon] = { ref = ref, instance = instance, x = x, y = y, edge = floatOnEdge }
+            return true
+        end
+        function pins:RemoveAllWorldMapIcons() world.mapPins = {} end
+        function pins:RemoveAllMinimapIcons() world.minimapPins = {} end
         LibStub = setmetatable({}, { __call = function(_, name)
             if name == "HereBeDragons-2.0" then return hbd end
+            if name == "HereBeDragons-Pins-2.0" and world.pins ~= false then return pins end
             return nil
         end })
     end
@@ -385,6 +447,11 @@ local function Load()
             local chunk = assert(loadfile(ROOT .. file))
             chunk("DropOff", ns)
         end
+    end
+    -- Most tests are about the list, not about travel: no flights or boats.
+    if not world.travel then
+        ns.TravelData = { nodes = {}, flights = {}, transports = {} }
+        ns.Route.Reset()
     end
     ns.eventFrame.scripts.OnEvent(ns.eventFrame, "ADDON_LOADED", "DropOff")
     return ns
@@ -1044,6 +1111,311 @@ test("the snapshot records the quest the arrow points at", function()
     SlashCmdList.DROPOFF("debug")
     eq(DropOffDB.snapshot.current, 1, "current quest while guiding")
     eq(DropOffDB.snapshot.hiddenQuests, 0, "hidden count recorded")
+end)
+
+---------------------------------------------------------------------------
+-- Travel: the real flight masters, zeppelins and boats
+---------------------------------------------------------------------------
+
+-- Horde character standing at the Hammerfall flight master (Arathi), with one
+-- finished quest to hand in to Karang Amakkar at Zoram'gar Outpost (Ashenvale).
+local HAMMERFALL = { -916.3, -3496.9 }
+
+local function TravelScene(gx, gy)
+    NewWorld()
+    world.travel = true
+    local x, y = OnMap(1417, gx or HAMMERFALL[1], gy or HAMMERFALL[2])
+    world.player = { map = 1417, x = x, y = y }
+    world.items = { [100] = { name = "Vile Familiar Head", class = 12 } }
+    Put(100, 1)
+    world.quests = {
+        { id = 1, title = "King of the Foulweald", complete = true, objectives = { { "Head: 1/1", "item", true } } },
+    }
+    world.db.quests = { [1] = { objectives = { nil, nil, { { 100 } } }, finishedBy = { { 10 } } } }
+    local nx, ny = OnMap(1440, 3340, 1010)
+    world.db.npcs = {
+        [10] = { name = "Karang Amakkar", spawns = { [331] = { { nx * 100, ny * 100 } } }, friendlyToFaction = "H" },
+    }
+    return world
+end
+
+local function Kinds(legs)
+    local out = {}
+    for _, leg in ipairs(legs) do out[#out + 1] = leg.kind end
+    return table.concat(out, ",")
+end
+
+local function LabelTexts(ns)
+    local out = {}
+    for _, line in ipairs(ns.UI.Lines(ns.state.plan)) do
+        if line.kind == "label" then out[#out + 1] = line.text end
+    end
+    return out
+end
+
+local function Count(tbl)
+    local n = 0
+    for _ in pairs(tbl) do n = n + 1 end
+    return n
+end
+
+local function HasText(list, text)
+    for _, line in ipairs(list) do
+        if line:find(text, 1, true) then return true end
+    end
+    return false
+end
+
+test("a hand-in on the other continent gets the whole trip", function()
+    TravelScene()
+    local ns = Load()
+    ns.Toggle()
+    local target = ns.state.plan.ready[1].target
+    eq(Kinds(target.legs), "fly,walk,zeppelin,walk,fly,walk", "flight, zeppelin, flight, then on foot")
+    check(target.eta > 8 * 60 and target.eta < 25 * 60, "a plausible travel time, got " .. tostring(target.eta))
+    check(target.legs[#target.legs].final, "the last leg is the walk to the hand-in")
+
+    local labels = LabelTexts(ns)
+    check(HasText(labels, "Route · about"), "route header with the time")
+    check(HasText(labels, "1. Fly to Undercity"), "step 1: the flight")
+    check(HasText(labels, "2. Go to the zeppelin: Undercity"), "step 2: to the zeppelin tower")
+    check(HasText(labels, "3. Take the zeppelin to Orgrimmar"), "step 3: the zeppelin")
+    check(HasText(labels, "4. Go to the flight master: Orgrimmar"), "step 4: to the flight master")
+    check(HasText(labels, "5. Fly to Zoram'gar Outpost"), "step 5: the second flight")
+    check(HasText(labels, "6. Go to Karang Amakkar"), "step 6: the hand-in")
+    check(HasText(labels, ns.L.ROUTE_ASSUMED), "says the flights are assumed")
+
+    local waypoint = LiveWaypoints()[1]
+    eq(waypoint.title, "Fly to Undercity", "the arrow says what to do now")
+    eq(waypoint[1], 1417, "and points at the flight master here, not at the far hand-in")
+
+    local row = ns.UI.Rows()[1]
+    check(row.right:GetText():find("~%d+ min"), "the row shows a travel time instead of 'far'")
+end)
+
+test("the first step is the walk to the flight master", function()
+    TravelScene(HAMMERFALL[1] - 200, HAMMERFALL[2])
+    local ns = Load()
+    ns.Toggle()
+    local legs = ns.state.plan.ready[1].target.legs
+    eq(legs[1].kind, "walk", "on foot first")
+    eq(legs[1].to.node, 17, "to Hammerfall's flight master")
+    check(HasText(LabelTexts(ns), "1. Go to the flight master: Hammerfall · 200 yd"), "with the distance")
+    eq(LiveWaypoints()[1].title, "Go to the flight master: Hammerfall", "arrow text without the distance")
+
+    local adds = world.waypointAdds
+    world.player.x, world.player.y = OnMap(1417, HAMMERFALL[1] - 120, HAMMERFALL[2])
+    Advance(2)
+    eq(world.waypointAdds, adds, "walking toward it does not replace the waypoint")
+    check(HasText(LabelTexts(ns), "Hammerfall · 120 yd"), "the distance follows the player")
+
+    world.player.x, world.player.y = OnMap(1417, HAMMERFALL[1] - 10, HAMMERFALL[2])
+    Advance(2)
+    eq(ns.state.plan.ready[1].target.legs[1].kind, "fly", "arrived: the next step is the flight")
+end)
+
+test("a hand-in close by is a plain walk, with no route block", function()
+    TravelScene()
+    local nx, ny = OnMap(1417, HAMMERFALL[1] - 150, HAMMERFALL[2])
+    world.db.npcs[10].spawns = { [45] = { { nx * 100, ny * 100 } } }
+    local ns = Load()
+    ns.Toggle()
+    local target = ns.state.plan.ready[1].target
+    eq(Kinds(target.legs), "walk", "one walk")
+    check(not HasText(LabelTexts(ns), "Route ·"), "no steps listed for a walk")
+    eq(LiveWaypoints()[1].title, "King of the Foulweald (Karang Amakkar)", "the arrow points at the hand-in")
+end)
+
+test("the quickest hand-in comes first, whatever the continent", function()
+    TravelScene()
+    world.items[200] = { name = "Crate", class = 12 }
+    Put(200, 1)
+    world.quests[2] = { id = 2, title = "Crates", complete = true, objectives = { { "Crate: 1/1", "item", true } } }
+    world.db.quests[2] = { objectives = { nil, nil, { { 200 } } }, finishedBy = { { 20 } } }
+    local nx, ny = OnMap(1417, HAMMERFALL[1] - 300, HAMMERFALL[2])
+    world.db.npcs[20] = { name = "Quartermaster", spawns = { [45] = { { nx * 100, ny * 100 } } }, friendlyToFaction = "H" }
+    local ns = Load()
+    ns.Toggle()
+    eq(Titles(ns.state.plan.ready), "Crates,King of the Foulweald", "300 yd away before a 16 minute trip")
+end)
+
+test("the flight map tells which flight masters are known", function()
+    TravelScene()
+    local ns = Load()
+    ns.Toggle()
+    -- Hammerfall (here) and Tarren Mill are learned, Undercity is not.
+    world.taxiNodes = {
+        { nodeID = 17, state = 0 }, { nodeID = 13, state = 1 }, { nodeID = 11, state = 2 },
+    }
+    Fire(ns, "TAXIMAP_OPENED")
+    Advance(1)
+    check(DropOffCharDB.flights[17] and DropOffCharDB.flights[13], "learned ones recorded")
+    check(not DropOffCharDB.flights[11], "one the map shows as not learned is not")
+    check(DropOffCharDB.flightsSeen[0], "the continent counts as read")
+    local legs = ns.state.plan.ready[1].target.legs
+    for _, leg in ipairs(legs) do
+        check(not (leg.kind == "fly" and leg.to.node == 11), "no flight to an unknown flight master")
+    end
+    eq(legs[1].kind, "fly", "still flies as far as it can")
+    eq(legs[1].to.node, 13, "to Tarren Mill")
+    check(not legs[1].assumed, "a flight on a read continent is not a guess")
+
+    -- A later visit replaces what was known on that continent.
+    world.taxiNodes = { { nodeID = 17, state = 0 }, { nodeID = 11, state = 1 } }
+    Fire(ns, "TAXIMAP_OPENED")
+    check(DropOffCharDB.flights[11] and not DropOffCharDB.flights[13], "the list is replaced, not added to")
+
+    world.taxiNodes = {}
+    Fire(ns, "TAXIMAP_OPENED")
+    check(DropOffCharDB.flights[11], "an empty flight map changes nothing")
+end)
+
+test("an Alliance character takes boats, never a zeppelin", function()
+    TravelScene(-1240.5, -2515.1)   -- Refuge Pointe
+    world.faction = "Alliance"
+    world.db.npcs[10].friendlyToFaction = "A"
+    local ns = Load()
+    ns.Toggle()
+    local legs = ns.state.plan.ready[1].target.legs
+    local kinds = Kinds(legs)
+    check(kinds:find("boat", 1, true), "takes a boat: " .. kinds)
+    check(not kinds:find("zeppelin", 1, true), "no zeppelin")
+    for _, leg in ipairs(legs) do
+        if leg.to.node then eq(ns.TravelData.nodes[leg.to.node][5] ~= "H", true, "no Horde flight master") end
+    end
+end)
+
+test("the plan is kept as it was while on a flight path", function()
+    TravelScene()
+    local ns = Load()
+    ns.Toggle()
+    local before = ns.state.plan
+    eq(LiveWaypoints()[1][1], 1417, "before take-off the arrow is on the flight master")
+    world.onTaxi = true
+    world.player.x, world.player.y = OnMap(1417, 0, -2000)
+    Advance(5)
+    check(ns.state.plan == before, "no new plan in mid-air")
+    eq(LiveWaypoints()[1][1], 1415, "in the air the arrow is on where the flight lands")
+    eq(LiveWaypoints()[1].title, "Fly to Undercity", "same step")
+    world.onTaxi = false
+    Advance(2)
+    check(ns.state.plan ~= before, "planning resumes on landing")
+end)
+
+test("the route is drawn on the map and cleared with the window", function()
+    TravelScene(HAMMERFALL[1] - 200, HAMMERFALL[2])
+    local ns = Load()
+    ns.Toggle()
+    local onMap = Count(world.mapPins)
+    check(onMap > 20, "dots and markers on the world map, got " .. onMap)
+    check(onMap <= 320, "within the dot budget")
+    check(Count(world.minimapPins) >= 3, "the walk to the flight master is on the minimap")
+    for _, pin in pairs(world.mapPins) do
+        eq(pin.flag, 3, "shown on zone, continent and world maps")
+        check(pin.instance == 0 or pin.instance == 1, "on a continent")
+    end
+    check(ns.Trail.State().drawn, "state says drawn")
+
+    local pinsBefore = world.mapPins
+    Advance(2)
+    check(world.mapPins == pinsBefore, "nothing is laid again while the player stands still")
+
+    ns.Toggle()
+    eq(Count(world.mapPins), 0, "closing the window clears the map")
+    eq(Count(world.minimapPins), 0, "and the minimap")
+end)
+
+test("without TomTom the next stop is marked on the minimap rim", function()
+    TravelScene(HAMMERFALL[1] - 200, HAMMERFALL[2])
+    world.tomtom = false
+    local ns = Load()
+    ns.Toggle()
+    local rim = 0
+    for _, pin in pairs(world.minimapPins) do
+        if pin.edge then rim = rim + 1 end
+    end
+    eq(rim, 1, "one marker that stays on the rim")
+    eq(world.userWaypoint.uiMapID, 1417, "and the game's map pin is on the flight master")
+end)
+
+test("no pin library: the steps still show, nothing is drawn", function()
+    TravelScene()
+    world.pins = false
+    local ns = Load()
+    ns.Toggle()
+    check(HasText(LabelTexts(ns), "1. Fly to Undercity"), "steps listed")
+    check(not ns.Trail.State().drawn, "nothing drawn")
+    check(not ChatHas("error"), "and no error")
+end)
+
+test("French steps", function()
+    TravelScene()
+    world.locale = "frFR"
+    world.localNames = { { nodeID = 11, name = "Fossoyeuse, Tirisfal" }, { nodeID = 23, name = "Orgrimmar, Durotar" } }
+    local ns = Load()
+    ns.Toggle()
+    local labels = LabelTexts(ns)
+    check(HasText(labels, "Itinéraire · environ"), "header")
+    check(HasText(labels, "1. Prends le vol pour Fossoyeuse"), "flight, with the game's own name")
+    check(HasText(labels, "3. Prends le zeppelin pour Orgrimmar"), "zeppelin")
+    check(HasText(labels, "6. Va voir Karang Amakkar"), "hand-in")
+end)
+
+test("route planner on a small network", function()
+    NewWorld()
+    local ns = Load()
+    ns.TravelData = {
+        nodes = {
+            [1] = { "North Camp, Zone", 1, 0, 0, "H" },
+            [2] = { "South Camp, Zone", 1, -6000, 0, "H" },
+            [3] = { "Enemy Camp, Zone", 1, -3000, 0, "A" },
+            [4] = { "Far Port, Zone", 0, 0, 0, "B" },
+        },
+        flights = { { 1, 3, 3000 }, { 3, 2, 3000 }, { 1, 2, 9000 } },
+        transports = {
+            { "boat", "South - Far", "B", 1, -6100, 0, 2, 0, 100, 0, 4 },
+            { "zeppelin", "North - Far", "A", 1, 50, 0, 1, 0, 100, 0, 4 },
+        },
+    }
+    ns.Route.Reset()
+
+    check(ns.Route.To(0, 0, 1) == nil, "no route before a pass")
+    check(not ns.Route.Begin(nil, nil, nil), "unknown player position")
+    check(ns.Route.To(0, 0, 1) == nil, "still no route")
+
+    check(ns.Route.Begin(10, 0, 1), "pass from next to North Camp")
+    local seconds, legs = ns.Route.To(-6000, 100, 1)
+    eq(Kinds(legs), "fly,walk", "flies, then walks")
+    eq(legs[1].to.node, 2, "straight to South Camp")
+    eq(legs[1].stops, 0, "not through the enemy camp")
+    eq(math.floor(seconds), math.floor((10 * 1.3 / 7) + 9000 / 30 + 100 * 1.3 / 7), "walk + flight + walk")
+
+    seconds, legs = ns.Route.To(-20, 0, 1)
+    eq(Kinds(legs), "walk", "a short hop is walked")
+    eq(math.floor(legs[1].yards), 30, "straight there")
+
+    seconds, legs = ns.Route.To(150, 0, 0)
+    eq(Kinds(legs), "fly,walk,boat,walk", "other continent: flight, to the dock, boat, walk")
+    eq(legs[3].route, "South - Far", "the neutral boat, not the other faction's zeppelin")
+
+    check(ns.Route.To(0, 0, 7) == nil, "a continent nothing goes to")
+
+    check(ns.Route.Begin(0, 0, 7), "a pass from a place with no travel hub")
+    check(ns.Route.To(0, 0, 1) == nil, "no way out")
+    seconds, legs = ns.Route.To(30, 40, 7)
+    eq(Kinds(legs), "walk", "but a walk on the spot works")
+    eq(math.floor(legs[1].yards), 50, "by the straight line")
+end)
+
+test("the snapshot records the route", function()
+    TravelScene()
+    local ns = Load()
+    ns.Toggle()
+    SlashCmdList.DROPOFF("debug")
+    local quest = DropOffDB.snapshot.quests[1]
+    check(quest.target.eta and #quest.target.legs == 6, "legs and time saved")
+    check(DropOffDB.snapshot.trail.drawn, "trail state saved")
+    check(DropOffDB.snapshot.flights.allTaxiNodes, "flight map API noted")
 end)
 
 ---------------------------------------------------------------------------
