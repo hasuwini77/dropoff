@@ -27,7 +27,7 @@ Built for **WoW Forever** (interface 16001). English and French.
 
 ## How the trip is planned
 
-The trip is an estimate. DropOff knows where every flight master and every boat, zeppelin and airship dock is, and how long each flight path is. It picks the fastest chain of those, with straight-line walks in between. It does not follow roads, and it cannot see a mountain in the way.
+The trip is an estimate. DropOff knows where every flight master and every boat, zeppelin and airship dock is, and how long each flight path is. It picks the fastest chain of those, with walks in between. A walk is a straight line inside a zone and changes zone only where the zones join, so it does not cross a mountain range between two zones. It does not follow roads, and it cannot see a cliff inside a zone.
 
 It learns which flight paths your character knows the first time you open a flight map on each continent. Before that it takes them all as known and says so under the steps.
 
@@ -63,4 +63,4 @@ DropOff reads Questie's data through the public `LibQuestieDB` API at run time a
 
 ## License
 
-MIT. `TravelData.lua` is generated from the data tables of [OpenMap](https://github.com/openmap-world/openmap), also MIT: see `LICENSES/OpenMap.txt`.
+MIT. `TravelData.lua` is generated from the data tables of [OpenMap](https://github.com/openmap-world/openmap), also MIT: see `LICENSES/OpenMap.txt`. `Passes.lua` holds positions taken from the chokepoint list of [Polestar](https://github.com/fitzforge/polestar), which is under the GNU GPL version 3: see `LICENSES/Polestar.txt`.
