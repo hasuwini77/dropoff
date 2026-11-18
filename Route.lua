@@ -62,20 +62,27 @@ local function Passes()
     return type(ns.TravelPasses) == "table" and ns.TravelPasses or nil
 end
 
--- The zone a map counts as when walking: a city is the zone around it. Nil
--- for a map the pass table does not know.
+-- The zone a map counts as when walking: a city is the zone around it, a
+-- map inside a zone (a cave, a district) is that zone. Nil for a map the
+-- pass table does not know.
 function Route.Zone(mapId)
     local data = Passes()
-    if not data or type(mapId) ~= "number" then return nil end
-    mapId = data.cities[mapId] or mapId
-    return data.zones[mapId] and mapId or nil
+    if not data then return nil end
+    for _ = 1, 3 do
+        if type(mapId) ~= "number" then return nil end
+        mapId = data.cities[mapId] or mapId
+        if data.zones[mapId] then return mapId end
+        local info = C_Map and C_Map.GetMapInfo and Try(C_Map.GetMapInfo, mapId)
+        mapId = type(info) == "table" and info.parentMapID or nil
+    end
+    return nil
 end
 
 -- "Sun Rock Retreat, Stonetalon Mountains" -> the zone of that flight master.
 local function NodeZone(node)
     local data = Passes()
     if not data or not node then return nil end
-    return data.names[node[1]:match(",%s*(.+)$") or node[1]]
+    return data.names[node[1]:match(",%s*([^,]+)$") or node[1]]
 end
 
 -- Can a character walk from one place to the other without leaving a zone?
@@ -306,11 +313,14 @@ function Route.To(x, y, continent, mapId)
         index = cameFrom[index]
     end
 
-    local legs, at, zone = {}, origin, origin.zone
+    -- `at`: where the next leg starts. `through`: the last place of the
+    -- chain, which is a pass the player is already at when it gave no leg.
+    local legs, at, through, zone = {}, origin, origin, origin.zone
+    local skipped = 0   -- seconds of a walk to a pass that gave no leg: the next leg takes them
     for position, hubIndex in ipairs(chain) do
         local hub, edge = hubs[hubIndex], cameBy[hubIndex]
-        local stretch = edge == FROM_ORIGIN and WalkSeconds(Yards(at, hub)) or edge.seconds
-        local walked = edge.kind == "walk"
+        local stretch = (edge == FROM_ORIGIN and WalkSeconds(Yards(through, hub)) or edge.seconds) + skipped
+        skipped = 0
         if hub.pass then
             zone = Beyond(hub, hubs[chain[position + 1]] or goal, zone)
             -- At the pass already: the walk goes on from where the player is.
@@ -318,22 +328,26 @@ function Route.To(x, y, continent, mapId)
                 AddLeg(legs, "walk", at, hub, stretch, edge)
                 legs[#legs].enter = zone
                 at = hub
+            else
+                skipped = stretch
             end
         else
             -- Already standing at the flight master or on the dock: no step for it.
-            if not (walked and Yards(at, hub) < ARRIVE) then
+            if not (edge.kind == "walk" and Yards(at, hub) < ARRIVE) then
                 AddLeg(legs, edge.kind, at, hub, stretch, edge)
             end
             at, zone = hub, hub.zone
         end
+        through = hub
     end
+    local ending = WalkSeconds(Yards(through, goal)) + skipped
     local last = legs[#legs]
     if last and last.kind == "walk" and not last.to.pass then
         -- The trip ends on foot through a hub it does not use: one walk.
         last.to, last.final = Point(goal), true
-        last.seconds, last.yards = last.seconds + WalkSeconds(Yards(at, goal)), last.yards + Yards(at, goal)
+        last.seconds, last.yards = last.seconds + ending, last.yards + Yards(at, goal)
     else
-        AddLeg(legs, "walk", at, goal, WalkSeconds(Yards(at, goal)))
+        AddLeg(legs, "walk", at, goal, ending)
         legs[#legs].final = true
     end
     return seconds, legs

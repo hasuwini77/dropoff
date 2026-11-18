@@ -32,6 +32,8 @@ Publishing is free. It needs a CurseForge author account, which is why the proje
 
 The release workflow runs the tests, builds `DropOff-<tag>.zip`, attaches it to a GitHub release and uploads it to CurseForge. The packager reads `## Interface: 16001` and files the upload under WoW Forever.
 
+Before the first upload, settle the licence of `Passes.lua`: its positions come from Polestar's chokepoint list, which is under the GNU GPL version 3, while the addon is MIT. Either publish DropOff under the GPL version 3, or replace those positions with ones measured in game.
+
 Tags up to `v0.3.0` were pushed before the workflows existed, so they have no zip. The first file on CurseForge is the next tag.
 
 ## Summary (English)
