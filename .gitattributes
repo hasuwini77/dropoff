@@ -1,0 +1,5 @@
+# Walking maps and spawn heights from Shortest Path Forever (tools/vendor-router.sh):
+# generated data, never edited by hand, compared byte for byte with upstream.
+DropOff_Paths_*/*.lua -text -diff linguist-generated
+Router/*.lua -text linguist-vendored
+Router/Heights.lua -diff linguist-generated
