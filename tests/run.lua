@@ -35,6 +35,113 @@ local function test(name, fn)
 end
 
 ---------------------------------------------------------------------------
+-- Lua 5.1's coroutines
+---------------------------------------------------------------------------
+
+-- The game runs Lua 5.1, which cannot yield across a pcall; LuaJIT, which
+-- runs these tests, can. The embedded router slices its searches with
+-- coroutines and calls DropOff back inside one: a yield under a pcall of the
+-- same coroutine is made the error it would be in the game.
+do
+    local depth = setmetatable({}, { __mode = "k" })
+    local realPcall, realXpcall, realYield = pcall, xpcall, coroutine.yield
+    local function enter()
+        local co = coroutine.running() or "main"
+        depth[co] = (depth[co] or 0) + 1
+        return co
+    end
+    local function leave(co, ...)
+        depth[co] = depth[co] - 1
+        return ...
+    end
+    pcall = function(fn, ...)
+        local co = enter()
+        return leave(co, realPcall(fn, ...))
+    end
+    xpcall = function(fn, handler, ...)
+        local co = enter()
+        return leave(co, realXpcall(fn, handler, ...))
+    end
+    coroutine.yield = function(...)
+        local co = coroutine.running()
+        if co and (depth[co] or 0) > 0 then error("attempt to yield across a pcall: the game's Lua 5.1 cannot", 2) end
+        return realYield(...)
+    end
+end
+
+---------------------------------------------------------------------------
+-- The game's zlib and base64
+---------------------------------------------------------------------------
+
+-- For the tests that walk the real maps (DropOff_Paths_*): LuaJIT's ffi and
+-- the system's zlib stand in for C_EncodingUtil. Without them those tests
+-- are skipped, and say so.
+local Inflate
+do
+    local ok, ffi = pcall(require, "ffi")
+    local z
+    if ok then
+        ok = pcall(function()
+            ffi.cdef([[
+            typedef struct { const unsigned char *next_in; unsigned avail_in; unsigned long total_in;
+              unsigned char *next_out; unsigned avail_out; unsigned long total_out; const char *msg; void *state;
+              void *zalloc; void *zfree; void *opaque; int data_type; unsigned long adler; unsigned long reserved; } z_stream;
+            int inflateInit_(z_stream *strm, const char *version, int stream_size);
+            int inflate(z_stream *strm, int flush);
+            int inflateEnd(z_stream *strm);
+            const char *zlibVersion(void);
+            ]])
+            z = ffi.load("z")
+        end)
+    end
+    if ok and z then
+        Inflate = function(data)
+            local strm = ffi.new("z_stream")
+            if z.inflateInit_(strm, z.zlibVersion(), ffi.sizeof("z_stream")) ~= 0 then return nil end
+            strm.next_in, strm.avail_in = data, #data
+            local size = 1024 * 1024
+            local buffer = ffi.new("unsigned char[?]", size)
+            local out = {}
+            while true do
+                strm.next_out, strm.avail_out = buffer, size
+                local code = z.inflate(strm, 0)
+                out[#out + 1] = ffi.string(buffer, size - strm.avail_out)
+                if code == 1 then break end
+                if code ~= 0 then
+                    z.inflateEnd(strm)
+                    return nil
+                end
+            end
+            z.inflateEnd(strm)
+            return table.concat(out)
+        end
+    end
+end
+
+local BASE64 = {}
+do
+    local alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
+    for index = 1, 64 do BASE64[alphabet:byte(index)] = index - 1 end
+end
+
+local function DecodeBase64(text)
+    local out, acc, bits = {}, 0, 0
+    for index = 1, #text do
+        local value = BASE64[text:byte(index)]
+        if value then
+            acc, bits = acc * 64 + value, bits + 6
+            if bits >= 8 then
+                bits = bits - 8
+                local char = math.floor(acc / 2 ^ bits)
+                out[#out + 1] = string.char(char)
+                acc = acc - char * 2 ^ bits
+            end
+        end
+    end
+    return table.concat(out)
+end
+
+---------------------------------------------------------------------------
 -- Mock clock and timers
 ---------------------------------------------------------------------------
 
@@ -135,6 +242,8 @@ local MAPS = {
     -- walk from Tarren Mill to the zeppelins of Tirisfal goes through both.
     [1421] = { name = "Silverpine Forest", ox = 3400, oy = 1700, size = -4200, instance = 0 },
     [1424] = { name = "Hillsbrad Foothills", ox = 1000, oy = 400, size = -3200, instance = 0 },
+    -- The city under the Ruins of Lordaeron: its own map, in Tirisfal.
+    [1458] = { name = "Undercity", ox = 740, oy = 1926, size = -1000, instance = 0 },
 }
 local AREA_TO_MAP = { [14] = 1411, [17] = 1413, [12] = 1429, [45] = 1417, [331] = 1440, [405] = 1443 }
 
@@ -177,7 +286,11 @@ local function NewWorld()
         superTracked = false,
         clearedUserWaypoint = 0,
         travel = false,     -- true: plan with the real travel data
-        engine = nil,       -- a walking router another addon has loaded (Router below)
+        engine = nil,       -- a router put in place of the embedded one (Router below)
+        mapAddons = {},     -- the map addons the game knows: name -> true, "DISABLED", or "real" (reads the real files)
+        loadCalls = {},     -- the addons asked for with LoadAddOn, in order
+        lifts = false,      -- true: with the real lift table
+        errors = {},        -- what reached the game's error handler
         combat = false,
         unread = nil,       -- files of the TOC the game did not read: { ["Walk.lua"] = true }
         onTaxi = false,
@@ -197,6 +310,9 @@ end
 
 local SECRET = setmetatable({}, { __tostring = function() return "<secret>" end })
 
+-- The addons holding the walking maps, and the continent of each.
+local MAP_ADDONS = { DropOff_Paths_EasternKingdoms = 0, DropOff_Paths_Kalimdor = 1, DropOff_Paths_Zephras = 2991 }
+
 local function InstallGlobals()
     now, timers = 1000, {}
 
@@ -206,10 +322,35 @@ local function InstallGlobals()
     GetBuildInfo = function() return "1.60.1", "70938", "Nov 1 2026", 16001 end
     UnitFactionGroup = function() return world.faction end
     InCombatLockdown = function() return world.combat or false end
-    Polestar_NavEngine = world.engine
-    C_AddOns = { IsAddOnLoaded = function(name) return world.engine ~= nil and name:find("^Polestar") ~= nil end }
+    DropOffPathData = nil
+    geterrorhandler = function() return function(err) world.errors[#world.errors + 1] = tostring(err) end end
+    GetSubZoneText = function() return world.subzone or "" end
+    C_EncodingUtil = Inflate and { DecodeBase64 = DecodeBase64, DecompressString = Inflate } or nil
+    C_AddOns = {
+        GetAddOnInfo = function(name)
+            local how = world.mapAddons[name]
+            if how == nil then return name, nil, nil, false, "MISSING" end
+            return name, name, "", how ~= "DISABLED", how == "DISABLED" and "DISABLED" or nil
+        end,
+        LoadAddOn = function(name)
+            world.loadCalls[#world.loadCalls + 1] = name
+            local how = world.mapAddons[name]
+            if how == nil then return false, "MISSING" end
+            if how == "DISABLED" then return false, "DISABLED" end
+            if how == "real" then
+                -- As the game does: every file of the addon's TOC, in order.
+                for line in io.lines(ROOT .. name .. "/" .. name .. ".toc") do
+                    local file = line:match("^([%w_]+%.lua)%s*$")
+                    if file then assert(loadfile(ROOT .. name .. "/" .. file))(name, {}) end
+                end
+            elseif world.engine and world.engine.maps then
+                world.engine.maps[MAP_ADDONS[name]] = true
+            end
+            return true
+        end,
+    }
     UnitOnTaxi = function() return world.onTaxi end
-    Enum = { FlightPathState = { Current = 0, Reachable = 1, Unreachable = 2 } }
+    Enum = { FlightPathState = { Current = 0, Reachable = 1, Unreachable = 2 }, CompressionMethod = { Zlib = 1 } }
     GetTaxiMapID = function() return 1415 end
     C_TaxiMap = {
         GetAllTaxiNodes = function() return world.taxiNodes or {} end,
@@ -484,12 +625,19 @@ local function Load(saved)
     DropOffDB = saved
     local ns = {}
     for line in io.lines(ROOT .. "DropOff.toc") do
-        local file = line:match("^([%w_]+%.lua)%s*$")
-        if file and not (world.unread and world.unread[file]) then
+        -- "Walk.lua", or "Router\Path.lua" for a file in a folder.
+        local file = line:match("^([%w_\\]+%.lua)%s*$")
+        file = file and file:gsub("\\", "/")
+        local folder = file and file:match("^(.-)/")
+        if file and not (world.unread and (world.unread[file] or world.unread[folder])) then
             local chunk = assert(loadfile(ROOT .. file))
             chunk("DropOff", ns)
         end
     end
+    -- A test's own router stands in for the embedded one. Most tests are not
+    -- about lifts: none.
+    if world.engine ~= nil then ns.Path = world.engine end
+    if not world.lifts then ns.TravelLifts = {} end
     -- Most tests are about the list, not about travel: no flights or boats.
     if not world.travel then
         ns.TravelData = { nodes = {}, flights = {}, transports = {} }
@@ -586,6 +734,19 @@ end
 ---------------------------------------------------------------------------
 -- Tests
 ---------------------------------------------------------------------------
+
+test("the test kit makes a yield across a pcall the error it is in the game", function()
+    local resumed = coroutine.wrap(function()
+        local plain = coroutine.yield("plain")
+        local ok, err = pcall(function() coroutine.yield("under a pcall") end)
+        return plain, ok, err
+    end)
+    eq(resumed(), "plain", "a plain yield goes through")
+    local plain, ok, err = resumed("back")
+    eq(plain, "back", "and comes back")
+    eq(ok, false, "a yield under a pcall of the same coroutine is an error")
+    check(tostring(err):find("yield across a pcall", 1, true) ~= nil, "that says so: " .. tostring(err))
+end)
 
 test("bag scan counts slots, stacks and free space", function()
     Scene()
@@ -2188,20 +2349,19 @@ test("the snapshot records the route", function()
 end)
 
 ---------------------------------------------------------------------------
--- Real walks: a walking router another addon has loaded
+-- Real walks: the embedded walking router
 ---------------------------------------------------------------------------
 
--- A router with the calls of Polestar's (the global Polestar_NavEngine): it
--- keeps what it was asked and answers when the test says so.
---   options.resident[continent]: its maps of that continent are in memory
---   options.nodata[continent]: it has none for that continent
+-- A router with the calls Walk.lua makes of the embedded one (ns.Path): it
+-- keeps what it was asked and answers when the test says so. Its maps of a
+-- continent are in memory once their addon was loaded (C_AddOns.LoadAddOn).
 --   options.throws: every search raises an error
 local function Router(options)
     options = options or {}
-    local router = { asks = {}, cancels = 0 }
-    function router.Find(map, from, to, callback, opts)
+    local router = { asks = {}, cancels = 0, clears = 0, maps = {} }
+    function router.Find(map, from, to, callback, ...)
         if options.throws then error("router exploded") end
-        local job = { map = map, from = from, to = to, callback = callback, opts = opts }
+        local job = { map = map, from = from, to = to, callback = callback, extra = select("#", ...) }
         router.asks[#router.asks + 1] = job
         return job
     end
@@ -2209,8 +2369,8 @@ local function Router(options)
         job.cancelled = true
         router.cancels = router.cancels + 1
     end
-    function router.Available(map) return not (options.nodata or {})[map] end
-    function router.Resident(map) return (options.resident or {})[map] == true end
+    function router.HasData(map) return router.maps[map] == true end
+    function router.ClearCaches() router.clears = router.clears + 1 end
     -- Answers a search (the last one asked): a path from its start through
     -- `turns` ({ { x, y }, ... }) to its goal, or the reason there is none.
     -- A cancelled search is never answered, unless `late` says so.
@@ -2229,7 +2389,6 @@ local function Router(options)
         for index = 2, #points do
             yards = yards + math.sqrt((points[index].x - points[index - 1].x) ^ 2 + (points[index].y - points[index - 1].y) ^ 2)
         end
-        job.yards = yards
         job.callback(points, yards * 1.15, job)
     end
     return router
@@ -2240,6 +2399,9 @@ end
 -- the plateau, then south.
 local THUNDER_BLUFF = { -1197.2, 29.7 }
 local ROUND = { { -400, 40 }, { -620, 400 }, { -680, 750 }, { -1050, 1250 } }
+-- The west lift of Thunder Bluff (Lifts.lua), and a way on from its foot.
+local WEST_LIFT = { x = -1297.31, y = 187.505, top = 130.082, bottom = 68.711 }
+local FROM_LIFT = { { -1400, 800 } }
 
 local function PathYards(from, turns, to)
     local yards, at = 0, from
@@ -2251,7 +2413,9 @@ local function PathYards(from, turns, to)
 end
 
 -- A Horde character at the Thunder Bluff flight master, a quest to hand in
--- at Ghost Walker Post, the window open. `router`: the walking router loaded.
+-- at Ghost Walker Post, the window open. `router`: a router of the test's
+-- own, with the map addons installed; nil: the embedded router, and no map
+-- addon unless `before` puts one.
 local function PlateauScene(router, before)
     TravelScene()
     local x, y = OnMap(1412, THUNDER_BLUFF[1], THUNDER_BLUFF[2])
@@ -2259,6 +2423,9 @@ local function PlateauScene(router, before)
     local nx, ny = OnMap(1443, GHOST_WALKER[1], GHOST_WALKER[2])
     world.db.npcs[10] = { name = "Nataka Longhorn", spawns = { [405] = { { nx * 100, ny * 100 } } }, friendlyToFaction = "H" }
     world.engine = router
+    if router then
+        for name in pairs(MAP_ADDONS) do world.mapAddons[name] = true end
+    end
     if before then before() end
     local ns = Load()
     DropOffCharDB.flights, DropOffCharDB.flightsSeen = {}, { [0] = true, [1] = true }
@@ -2288,7 +2455,11 @@ local function OffPath(points, x, y)
     return least
 end
 
-test("without a walking router a walk is a straight line and says so", function()
+local function Near(a, b, within)
+    return math.abs(a - b) <= (within or 0.01)
+end
+
+test("without the walking maps a walk is a straight line and says so", function()
     local ns = PlateauScene(nil)
     local target = Target(ns)
     eq(Trip(target.legs), "walk>1412|1443 walk>goal", "to the pass, then to the hand-in")
@@ -2300,10 +2471,22 @@ test("without a walking router a walk is a straight line and says so", function(
     check(HasLabel(ns, "Walking distances are as the crow flies."), "in the small window too")
     DropOffFrame.size:Click()
     eq(target.walk, nil, "no real yards")
+    Advance(30)
+    eq(#world.loadCalls, 1, "the maps were asked for once, not at every tick")
+    eq(world.loadCalls[1], "DropOff_Paths_Kalimdor", "those of the continent the walk is on")
     SlashCmdList.DROPOFF("debug")
-    eq(DropOffDB.snapshot.walk.engine, false, "the snapshot says there is no router")
-    eq(DropOffDB.snapshot.walk.asked, 0, "and nothing was asked")
+    local walk = DropOffDB.snapshot.walk
+    eq(walk.router, true, "the snapshot says the router is there")
+    eq(walk.asked, 0, "that nothing was asked")
+    eq(walk.held, "nodata", "for want of maps")
+    eq(walk.maps[1].addon, "DropOff_Paths_Kalimdor", "which addon holds them")
+    eq(walk.maps[1].inMemory, false, "that they are not in memory")
+    eq(walk.maps[1].reason, "MISSING", "and why: the game does not know the addon")
+    eq(walk.maps[1].why, "MISSING", "as the game's addon list says too")
+    eq(walk.maps[0].tries, nil, "the other continent's were never asked for")
+    eq(walk.player.map, 1412, "and the map the player is on")
     check(not ChatHas("error"), "no error")
+    eq(#world.errors, 0, "none for the game's handler either")
 end)
 
 test("a plain walk says how far in a straight line, in both sizes", function()
@@ -2322,18 +2505,19 @@ test("a plain walk says how far in a straight line, in both sizes", function()
     end
 end)
 
-test("with a walking router the walk follows its path", function()
+test("with its maps loaded the walk follows the router's path", function()
     local router = Router()
     local ns = PlateauScene(router)
+    eq(#world.loadCalls, 1, "the maps are loaded at the first walk")
+    eq(world.loadCalls[1], "DropOff_Paths_Kalimdor", "those of Kalimdor only")
     eq(#router.asks, 1, "one search")
     local ask = router.asks[1]
     eq(ask.map, 1, "on Kalimdor")
-    check(math.abs(ask.from.x - THUNDER_BLUFF[1]) < 0.01 and math.abs(ask.from.y - THUNDER_BLUFF[2]) < 0.01,
-        "from the player")
-    check(math.abs(ask.to.x - GHOST_WALKER[1]) < 0.5 and math.abs(ask.to.y - GHOST_WALKER[2]) < 0.5,
+    check(Near(ask.from.x, THUNDER_BLUFF[1]) and Near(ask.from.y, THUNDER_BLUFF[2]), "from the player")
+    check(Near(ask.to.x, GHOST_WALKER[1], 0.5) and Near(ask.to.y, GHOST_WALKER[2], 0.5),
         "to the hand-in itself: the pass is not a place to go through")
     eq(ask.from.z, nil, "no height: the game gives none")
-    eq(ask.opts.profile, "Horde", "priced for the character's faction")
+    eq(ask.extra, 0, "nothing after the callback: a fifth argument would walk on water")
     eq(Trip(Target(ns).legs), "walk>1412|1443 walk>goal", "still straight lines while the router searches")
     check(HasText(LabelTexts(ns), "as the crow flies"), "and said so")
 
@@ -2348,10 +2532,12 @@ test("with a walking router the walk follows its path", function()
     check(yards > 2500, "far more than the straight line")
     check(math.abs(target.eta - yards / 7) < 0.5, "its time is the path's, with no guess for the roads")
     eq(#leg.path, #ROUND + 2, "the player, each turn and the hand-in")
+    eq(leg.lift, nil, "with no lift on the way")
 
     local label = "Go to Nataka Longhorn · " .. math.floor(yards + 0.5) .. " yd"
     check(HasLabel(ns, "  " .. label), "the step says the real yards")
     check(not HasText(LabelTexts(ns), "as the crow flies"), "and no straight line is spoken of")
+    check(not HasText(LabelTexts(ns), "lift"), "nor a lift")
     eq(ns.UI.Rows()[1].data.right, math.floor(yards + 0.5) .. " yd", "the row too")
     DropOffFrame.size:Click()
     check(HasLabel(ns, "Now: " .. label), "and the small window")
@@ -2360,6 +2546,7 @@ test("with a walking router the walk follows its path", function()
     Advance(10)
     eq(#router.asks, 1, "standing still, nothing is asked again")
     eq(router.cancels, 0, "and nothing was cancelled")
+    eq(#world.loadCalls, 1, "and the maps are not loaded twice")
 end)
 
 test("a trip gone through twice keeps its search, and a slow answer is not asked again at once", function()
@@ -2480,35 +2667,43 @@ test("no way on foot: the straight line stays, and the router is not asked in a 
     eq(#router.asks, 2, "from further on it is")
     SlashCmdList.DROPOFF("debug")
     local walk = DropOffDB.snapshot.walk
-    eq(walk.engine, true, "the snapshot says a router is there")
+    eq(walk.router, true, "the snapshot says the router is there")
     eq(walk.answers[1].reason, "unreachable", "what it answered")
+    eq(walk.answers[1].direct, "unreachable", "straight there")
     check(walk.answers[1].straight > 1600, "over how many straight yards")
     check(walk.waiting ~= nil, "and that a search is under way")
 end)
 
 test("the snapshot records the router's answer", function()
-    local router = Router({ resident = { [1] = true } })
+    local router = Router()
     local ns = PlateauScene(router)
     Advance(3)
     router.Answer(ROUND)
     Advance(0.1)
     SlashCmdList.DROPOFF("debug")
     local walk = DropOffDB.snapshot.walk
-    eq(walk.asked, 1, "one search")
+    eq(walk.asked, 1, "one walk asked for")
     eq(walk.answered, 1, "one answer")
     eq(walk.waiting, nil, "none under way")
     local answer = walk.answers[1]
     eq(answer.reason, "ok", "a path")
-    eq(answer.real, math.floor(PathYards(THUNDER_BLUFF, ROUND, GHOST_WALKER) + 0.5), "the router's yards")
-    eq(answer.drawn, answer.real, "the yards drawn are the same")
+    eq(answer.drawn, math.floor(PathYards(THUNDER_BLUFF, ROUND, GHOST_WALKER) + 0.5), "its yards")
+    eq(answer.direct, answer.drawn, "it is the way straight there")
+    eq(answer.lift, nil, "with no lift")
+    eq(answer.searches, 1, "found in one search")
     eq(answer.points, #ROUND + 2, "its points")
-    check(answer.straight < answer.real, "the straight line beside it")
+    check(answer.straight < answer.drawn, "the straight line beside it")
     check(answer.waited >= 3, "how long it took: " .. answer.waited)
-    eq(walk.maps[1].resident, true, "Kalimdor's maps were in memory")
-    eq(walk.maps[0].resident, false, "the Eastern Kingdoms' were not")
-    eq(walk.addons.Polestar_Nav, true, "and which of the router's addons are loaded")
+    eq(walk.maps[1].inMemory, true, "Kalimdor's maps are in memory")
+    eq(walk.maps[1].loaded, true, "loaded by DropOff")
+    eq(walk.maps[1].tries, 1, "at the first try")
+    eq(walk.maps[1].loadable, true, "as the game's addon list allowed")
+    eq(walk.maps[0].inMemory, false, "the Eastern Kingdoms' are not")
+    eq(walk.maps[0].tries, nil, "and were not asked for")
+    eq(walk.maps[2991].addon, "DropOff_Paths_Zephras", "Zephras Isle has an addon of its own")
     eq(#router.asks, 1, "taking the snapshot asks for nothing")
     eq(router.cancels, 0, "and cancels nothing")
+    eq(#world.loadCalls, 1, "and loads nothing")
     check(ns.Walk.State().answers ~= walk.answers, "the snapshot holds a copy")
 end)
 
@@ -2516,10 +2711,12 @@ test("nothing is asked in a fight", function()
     local router = Router()
     local ns = PlateauScene(router, function() world.combat = true end)
     eq(#router.asks, 0, "no search in combat")
+    eq(#world.loadCalls, 0, "and no maps are read: that takes a moment")
     eq(ns.Walk.State().held, "combat", "the reason is kept")
     world.combat = false
     Advance(2)
-    eq(#router.asks, 1, "out of combat it is asked")
+    eq(#world.loadCalls, 1, "out of combat the maps are loaded")
+    eq(#router.asks, 1, "and the walk is asked for")
 end)
 
 test("closing the window gives the search up", function()
@@ -2527,40 +2724,65 @@ test("closing the window gives the search up", function()
     local ns = PlateauScene(router)
     ns.Toggle()
     eq(router.cancels, 1, "the search is cancelled")
+    eq(router.clears, 1, "and the router lets go of what it decoded")
     router.Answer(ROUND, nil, true)
     ns.Toggle()
     eq(Trip(Target(ns).legs), "walk>1412|1443 walk>goal", "an answer that comes all the same is not used")
     eq(#router.asks, 2, "the window open again: asked again")
 end)
 
-test("a walk on the other continent waits until the router has its maps", function()
+test("a walk on the other continent is searched too, with that continent's maps", function()
     TravelScene(HAMMERFALL[1] - 200, HAMMERFALL[2])
     local router = Router()
     world.engine = router
+    for name in pairs(MAP_ADDONS) do world.mapAddons[name] = true end
     local ns = Load()
     ns.Toggle()
     eq(#router.asks, 1, "the walk to the flight master, where the player is")
     eq(router.asks[1].map, 0, "in the Eastern Kingdoms")
+    eq(#world.loadCalls, 1, "with the maps of the Eastern Kingdoms only")
     router.Answer({})
     Advance(3)
     eq(#router.asks, 2, "then the walk to the zeppelin, one search at a time")
+    eq(router.asks[2].map, 0, "there too")
+    eq(router.asks[2].from.z, nil, "from a flight master: no height when there is one floor")
     router.Answer({})
     Advance(3)
-    for _, ask in ipairs(router.asks) do eq(ask.map, 0, "nothing asked on Kalimdor") end
-    eq(ns.Walk.State().held, "elsewhere", "the reason is kept")
+    eq(#router.asks, 3, "then the walk beyond the crossing")
+    eq(router.asks[3].map, 1, "on Kalimdor")
+    eq(world.loadCalls[2], "DropOff_Paths_Kalimdor", "whose maps are loaded for it")
+    eq(ns.Walk.State().held, nil, "nothing is held back")
+    router.Answer({})
+    Advance(3)
+    eq(#router.asks, 4, "and the last walk, from the flight master to the hand-in")
+    router.Answer({})
+    Advance(3)
+    eq(#world.loadCalls, 2, "each continent's maps were loaded once")
     local legs = Target(ns).legs
+    eq(Trip(legs), "walk>17 fly>11 walk>dock zeppelin>dock walk>23 fly>58 walk>goal", "the trip is the planner's")
     check(legs[1].real, "the first walk is real")
-    check(not legs[#legs].real, "the last one, in Ashenvale, a straight line")
-    check(HasText(LabelTexts(ns), "as the crow flies"), "and said so")
+    check(legs[#legs].real, "and the last one, in Ashenvale")
+    check(not HasText(LabelTexts(ns), "as the crow flies"), "no straight line is left")
 end)
 
-test("a router with no maps of the continent is not asked", function()
-    local router = Router({ nodata = { [1] = true } })
-    local ns = PlateauScene(router)
-    Advance(5)
-    eq(#router.asks, 0, "no search")
+test("maps that do not load are not asked for at every tick, and the walk stays straight", function()
+    local router = Router()
+    local ns = PlateauScene(router, function() world.mapAddons.DropOff_Paths_Kalimdor = "DISABLED" end)
+    Advance(30)
+    eq(#router.asks, 0, "no search: the router is never called without maps")
+    eq(#world.loadCalls, 1, "the maps were asked for once")
     eq(ns.Walk.State().held, "nodata", "the reason is kept")
     check(HasText(LabelTexts(ns), "as the crow flies"), "straight lines")
+    SlashCmdList.DROPOFF("debug")
+    local map = DropOffDB.snapshot.walk.maps[1]
+    eq(map.reason, "DISABLED", "the snapshot says why they did not load")
+    eq(map.loadable, false, "and that the game would not load them")
+    eq(map.loaded, false, "so they are not")
+    -- Enabled in the addon list meanwhile.
+    world.mapAddons.DropOff_Paths_Kalimdor = true
+    Advance(40)
+    eq(#world.loadCalls, 2, "a minute on they are asked for again")
+    eq(#router.asks, 1, "and the walk is searched")
 end)
 
 test("a broken router never breaks the trip", function()
@@ -2572,7 +2794,7 @@ test("a broken router never breaks the trip", function()
     eq(ns.Walk.State().asked, 1, "and it is not asked at every tick")
 
     ns = PlateauScene({ Find = "not a function", Cancel = function() end })
-    eq(ns.Walk.State().engine, false, "a global that is not a router is not one")
+    eq(ns.Walk.State().router, false, "a table that is not a router is not one")
 
     local router = Router()
     ns = PlateauScene(router)
@@ -2580,6 +2802,13 @@ test("a broken router never breaks the trip", function()
     Advance(0.1)
     eq(Trip(Target(ns).legs), "walk>1412|1443 walk>goal", "points that are no path are not drawn")
     eq(ns.Walk.State().answers[1].reason, "empty", "and said so")
+
+    router = Router()
+    ns = PlateauScene(router, function() world.lifts = true end)
+    router.asks[1].callback(nil, "error", nil)
+    Advance(0.1)
+    eq(#router.asks, 1, "after an error of the router no lift is tried")
+    eq(ns.Walk.State().answers[1].reason, "error", "and the snapshot says so")
 end)
 
 test("after an update and a /reload the new file is not read: straight lines, no error", function()
@@ -2595,6 +2824,26 @@ test("after an update and a /reload the new file is not read: straight lines, no
     ns.Toggle()
     eq(#LiveWaypoints(), 0, "closing works")
     check(not ChatHas("error"), "no error anywhere")
+end)
+
+test("from 0.6 to 0.7 with a /reload: the router's files are not read, straight lines, no error", function()
+    -- Walk.lua was there before and is read anew; the files that are new
+    -- are not, and the game does not know the map addons yet.
+    local ns = PlateauScene(nil, function() world.unread = { Router = true, ["Lifts.lua"] = true } end)
+    check(ns.Walk ~= nil, "Walk.lua is read")
+    eq(ns.Path, nil, "the router is not")
+    eq(ns.TravelLifts and #ns.TravelLifts or 0, 0, "nor the lifts")
+    Advance(5)
+    eq(Trip(Target(ns).legs), "walk>1412|1443 walk>goal", "the trip is the planner's")
+    check(HasLabel(ns, "  Walking distances are as the crow flies."), "in straight lines, said so")
+    eq(#world.loadCalls, 0, "no maps are asked for without a router")
+    SlashCmdList.DROPOFF("debug")
+    local walk = DropOffDB.snapshot.walk
+    eq(walk.router, false, "the snapshot says the router is missing")
+    eq(walk.maps[1].why, "MISSING", "and that the game does not know the map addon")
+    ns.Toggle()
+    check(not ChatHas("error"), "no error anywhere")
+    eq(#world.errors, 0, "none for the game's handler either")
 end)
 
 test("the order of the list does not move when a real walk is longer", function()
@@ -2619,6 +2868,357 @@ end)
 test("French: à vol d'oiseau", function()
     local ns = PlateauScene(nil, function() world.locale = "frFR" end)
     check(HasLabel(ns, "  Distances à pied : à vol d'oiseau."), "a straight line says so in French")
+end)
+
+---------------------------------------------------------------------------
+-- Lifts: not in the walking maps, tried as two walks joined
+---------------------------------------------------------------------------
+
+test("with no way straight there, the walk takes a lift", function()
+    local router = Router()
+    local ns = PlateauScene(router, function() world.lifts = true end)
+    router.Answer("unreachable")
+    eq(#router.asks, 2, "a lift is tried at once")
+    local ask = router.asks[2]
+    check(Near(ask.from.x, THUNDER_BLUFF[1]) and ask.from.z == nil, "from the player")
+    check(Near(ask.to.x, WEST_LIFT.x) and Near(ask.to.y, WEST_LIFT.y), "to the lift the straight lines make shortest")
+    eq(ask.to.z, WEST_LIFT.top, "entered at the top first: the height picks the end")
+    eq(ask.extra, 0, "nothing after the callback")
+    eq(Trip(Target(ns).legs), "walk>1412|1443 walk>goal", "nothing is drawn before the search is over")
+    router.Answer({})
+    eq(#router.asks, 3, "then the way on from the other end")
+    ask = router.asks[3]
+    check(Near(ask.from.x, WEST_LIFT.x) and Near(ask.from.y, WEST_LIFT.y), "from the same spot on the map")
+    eq(ask.from.z, WEST_LIFT.bottom, "at the bottom")
+    check(Near(ask.to.x, GHOST_WALKER[1], 0.5), "to the hand-in")
+    router.Answer(FROM_LIFT)
+    eq(#router.asks, 4, "the same lift the other way round could still be shorter")
+    eq(router.asks[4].to.z, WEST_LIFT.bottom, "entered at the bottom")
+    router.Answer("unreachable")
+    Advance(0.1)
+    eq(#router.asks, 4, "the north lift is further than the way found: not tried")
+
+    local target = Target(ns)
+    local yards = PathYards(THUNDER_BLUFF, { { WEST_LIFT.x, WEST_LIFT.y }, FROM_LIFT[1] }, GHOST_WALKER)
+    eq(Trip(target.legs), "walk>goal", "one walk")
+    local leg = target.legs[1]
+    check(leg.real, "along a real path")
+    check(math.abs(leg.yards - yards) < 1, "the yards of both halves: " .. leg.yards .. " against " .. yards)
+    check(math.abs(leg.seconds - (yards / 7 + 20)) < 0.5, "and twenty seconds for the lift")
+    check(math.abs(target.eta - leg.seconds) < 0.5, "in the trip's time too")
+    eq(#leg.path, 4, "the player, the lift, the turn, the hand-in: the lift is one point")
+    eq(leg.lift, 2, "the lift is the next point")
+    check(HasLabel(ns, "  Go to Nataka Longhorn · " .. math.floor(yards + 0.5) .. " yd"), "the step says the real yards")
+    check(HasLabel(ns, "  On the way: take the lift."), "and a line of its own says to take the lift")
+    check(not HasText(LabelTexts(ns), "as the crow flies"), "no straight line")
+    DropOffFrame.size:Click()
+    check(HasLabel(ns, "On the way: take the lift."), "in the small window too")
+    DropOffFrame.size:Click()
+
+    SlashCmdList.DROPOFF("debug")
+    local answer = DropOffDB.snapshot.walk.answers[1]
+    eq(answer.reason, "ok", "the snapshot has a path")
+    eq(answer.direct, "unreachable", "that there was no way straight there")
+    eq(answer.lift, true, "that it takes a lift")
+    eq(answer.searches, 4, "and how many searches it took")
+    eq(DropOffDB.snapshot.walk.answered, 1, "all of them one answer")
+end)
+
+test("the arrow stops at the lift, and the walk goes on from its other end", function()
+    local router = Router()
+    local ns = PlateauScene(router, function() world.lifts = true end)
+    router.Answer("unreachable")
+    router.Answer({})
+    router.Answer(FROM_LIFT)
+    router.Answer("unreachable")
+    Advance(0.1)
+    -- Forty yards from the lift, on the way to it.
+    local dx, dy = WEST_LIFT.x - THUNDER_BLUFF[1], WEST_LIFT.y - THUNDER_BLUFF[2]
+    local length = math.sqrt(dx * dx + dy * dy)
+    MovePlayer(WEST_LIFT.x - dx / length * 40, WEST_LIFT.y - dy / length * 40)
+    Advance(2)
+    local lx, ly = OnMap(1412, WEST_LIFT.x, WEST_LIFT.y)
+    check(math.abs(world.arrow[2] - lx) < 0.0001 and math.abs(world.arrow[3] - ly) < 0.0001,
+        "the arrow is on the lift, not on a turn beyond it on the floor below")
+    eq(Target(ns).legs[1].lift, 2, "the lift is still ahead")
+
+    -- At the lift: what led to it is behind, whichever end the player is at.
+    MovePlayer(WEST_LIFT.x - dx / length * 10, WEST_LIFT.y - dy / length * 10)
+    Advance(2)
+    local leg = Target(ns).legs[1]
+    eq(leg.lift, nil, "the lift is not ahead any more")
+    eq(#leg.path, 3, "the player, the turn, the hand-in")
+    check(not HasText(LabelTexts(ns), "take the lift"), "the window does not speak of it any more")
+    local tx, ty = OnMap(1412, FROM_LIFT[1][1], FROM_LIFT[1][2])
+    check(math.abs(world.arrow[2] - tx) < 0.0001 and math.abs(world.arrow[3] - ty) < 0.0001, "the arrow is on the next turn")
+    check(math.abs(leg.seconds - leg.yards / 7) < 0.5, "and the time has no lift in it")
+
+    -- Down below, walking back under the way that led to the lift: it is not taken up again.
+    MovePlayer(WEST_LIFT.x - dx / length * 12, WEST_LIFT.y - dy / length * 12)
+    Advance(2)
+    eq(#Target(ns).legs[1].path, 3, "the path is still the one from the lift on")
+    eq(#router.asks, 4, "and nothing is asked again")
+end)
+
+test("a lift that could beat the way round is tried, and the shorter way is kept", function()
+    local router = Router()
+    local ns = PlateauScene(router, function() world.lifts = true end)
+    router.Answer(ROUND)
+    eq(#router.asks, 2, "the way round is long: the west lift could be shorter")
+    eq(router.asks[2].to.z, WEST_LIFT.top, "entered at the top")
+    router.Answer({})
+    router.Answer(FROM_LIFT)
+    router.Answer("unreachable")
+    Advance(0.1)
+    local leg = Target(ns).legs[1]
+    local yards = PathYards(THUNDER_BLUFF, { { WEST_LIFT.x, WEST_LIFT.y }, FROM_LIFT[1] }, GHOST_WALKER)
+    check(math.abs(leg.yards - yards) < 1, "the way through the lift is kept: " .. leg.yards)
+    eq(leg.lift, 2, "with its lift")
+    local answer = ns.Walk.State().answers[1]
+    eq(answer.direct, math.floor(PathYards(THUNDER_BLUFF, ROUND, GHOST_WALKER) + 0.5), "the snapshot keeps the way round beside it")
+    eq(answer.drawn, math.floor(yards + 0.5), "and the way kept")
+end)
+
+test("a lift that makes the walk longer is not taken", function()
+    local router = Router()
+    local ns = PlateauScene(router, function() world.lifts = true end)
+    router.Answer(ROUND)
+    router.Answer({})
+    -- From the foot of the lift, a long way round.
+    router.Answer({ { -1400, 800 }, { -3000, 800 } })
+    eq(router.asks[4].to.z, WEST_LIFT.bottom, "the same lift entered at the bottom")
+    router.Answer("unreachable")
+    eq(#router.asks, 5, "then the north lift, which could still beat the way round")
+    router.Answer("unreachable")
+    router.Answer("unreachable")
+    Advance(0.1)
+    eq(#router.asks, 6, "both ways, and no third lift")
+    local leg = Target(ns).legs[1]
+    check(math.abs(leg.yards - PathYards(THUNDER_BLUFF, ROUND, GHOST_WALKER)) < 1, "the way round is kept")
+    eq(leg.lift, nil, "with no lift")
+    eq(#leg.path, #ROUND + 2, "its own points")
+    check(not HasText(LabelTexts(ns), "take the lift"), "and the window speaks of none")
+end)
+
+test("a lift is not searched beyond the point where it can no longer win", function()
+    local router = Router()
+    local ns = PlateauScene(router, function() world.lifts = true end)
+    -- A way straight there, shorter than the straight lines through any lift.
+    router.Answer({})
+    Advance(0.1)
+    eq(#router.asks, 1, "no lift is tried")
+    check(Target(ns).legs[1].real, "the way is used")
+
+    router = Router()
+    ns = PlateauScene(router, function() world.lifts = true end)
+    -- A way a little longer than the straight lines through the west lift.
+    router.Answer({ { -850, 900 } })
+    eq(#router.asks, 2, "the lift is tried")
+    -- The walk to its top alone is already too long.
+    router.Answer({ { -1100, 300 }, { -700, 300 } })
+    eq(#router.asks, 3, "so the way on from its foot is not asked")
+    eq(router.asks[3].to.z, WEST_LIFT.bottom, "the next question is the lift entered at the bottom")
+    router.Answer("unreachable")
+    Advance(0.1)
+    eq(#router.asks, 3, "and that is all")
+    eq(Target(ns).legs[1].lift, nil, "the way straight there is kept")
+end)
+
+test("a lift search that takes too long leaves the way already found", function()
+    local router = Router()
+    local ns = PlateauScene(router, function() world.lifts = true end)
+    router.Answer(ROUND)
+    eq(#router.asks, 2, "a lift is being tried")
+    Advance(100)
+    eq(router.cancels, 1, "given up after a minute and a half")
+    local leg = Target(ns).legs[1]
+    check(leg.real, "the way round is used")
+    eq(#leg.path, #ROUND + 2, "as it was answered")
+    eq(ns.Walk.State().answers[1].reason, "ok", "and the snapshot has it")
+    router.Answer({}, router.asks[2], true)
+    Advance(0.1)
+    eq(#router.asks, 2, "an answer that comes after that is dropped")
+end)
+
+test("in the Undercity the walk starts on the city's floor, not in the ruins over it", function()
+    TravelScene()
+    local x, y = OnMap(1458, 1596, 240)
+    world.player = { map = 1458, x = x, y = y }
+    local router = Router()
+    world.engine = router
+    for name in pairs(MAP_ADDONS) do world.mapAddons[name] = true end
+    local ns = Load()
+    ns.Toggle()
+    eq(#router.asks, 1, "one search")
+    eq(router.asks[1].from.z, -43.1, "from the height of the city's floor")
+    check(Near(router.asks[1].from.x, 1596) and Near(router.asks[1].from.y, 240), "where the player stands")
+    eq(ns.Walk.State().player.map, 1458, "the snapshot says which map told it")
+end)
+
+test("French: prends l'ascenseur", function()
+    local router = Router()
+    local ns = PlateauScene(router, function() world.lifts, world.locale = true, "frFR" end)
+    router.Answer("unreachable")
+    router.Answer({})
+    router.Answer(FROM_LIFT)
+    router.Answer("unreachable")
+    Advance(0.1)
+    check(HasLabel(ns, "  En chemin : prends l'ascenseur."), "the lift is said in French")
+end)
+
+---------------------------------------------------------------------------
+-- The real router on the real maps
+---------------------------------------------------------------------------
+
+local function FileExists(path)
+    local file = io.open(path)
+    if file then file:close() end
+    return file ~= nil
+end
+
+-- The embedded router searching the walking maps as shipped. Needs LuaJIT's
+-- ffi and zlib, and the map folders.
+local function RealMaps(name, fn)
+    if not Inflate or not FileExists(ROOT .. "DropOff_Paths_Kalimdor/Nav1.lua") then
+        print("SKIP [" .. name .. "] needs LuaJIT's ffi, zlib and the map folders")
+        return
+    end
+    test(name, fn)
+end
+
+-- A walk of the real router from `from` to `to` ({ continent, x, y }), asked
+-- through Walk.Use as the window does: the leg once the search is over.
+local function RealWalk(ns, from, to)
+    local straight = math.sqrt((from.x - to.x) ^ 2 + (from.y - to.y) ^ 2)
+    local function Trip()
+        local target = { eta = straight / 7, legs = {
+            { kind = "walk", from = from, to = to, final = true, yards = straight, seconds = straight / 7 },
+        } }
+        ns.Walk.Use(target)
+        return target
+    end
+    Trip()
+    for _ = 1, 400 do
+        Advance(0.05)
+        local state = ns.Walk.State()
+        if state.answered > 0 and not state.waiting then break end
+    end
+    local target = Trip()
+    return target.legs[1], ns.Walk.State().answers[1], target
+end
+
+local function PassesBy(path, x, y, within)
+    for _, point in ipairs(path) do
+        if math.sqrt((point.x - x) ^ 2 + (point.y - y) ^ 2) <= within then return true end
+    end
+    return false
+end
+
+RealMaps("real maps: from the Thunder Bluff flight master down a lift to Ghost Walker Post", function()
+    local ns = PlateauScene(nil, function()
+        world.mapAddons.DropOff_Paths_Kalimdor = "real"
+        world.lifts = true
+    end)
+    eq(world.loadCalls[1], "DropOff_Paths_Kalimdor", "the maps are read from their addon")
+    for _ = 1, 400 do
+        Advance(0.05)
+        local state = ns.Walk.State()
+        if state.answered > 0 and not state.waiting then break end
+    end
+    Advance(2)
+    local target = Target(ns)
+    eq(Trip(target.legs), "walk>goal", "one walk")
+    local leg = target.legs[1]
+    check(leg.real, "along a real path")
+    check(leg.yards > 2600 and leg.yards < 3300, "about three kilometres, not 1700 yards: " .. math.floor(leg.yards))
+    check(leg.lift ~= nil, "down a lift")
+    check(PassesBy(leg.path, WEST_LIFT.x, WEST_LIFT.y, 6) or PassesBy(leg.path, -1032.655, -38.796, 6),
+        "one of the two lifts of Thunder Bluff")
+    check(HasLabel(ns, "  On the way: take the lift."), "the window says so")
+    check(not HasText(LabelTexts(ns), "as the crow flies"), "and no straight line")
+    local walk = ns.Walk.State()
+    eq(walk.answers[1].direct, "unreachable", "there is no way down on foot")
+    eq(walk.maps[1].loaded, true, "the snapshot says the maps loaded")
+    eq(walk.maps[1].inMemory, true, "and are in memory")
+    eq(#world.errors, 0, "the router raised nothing: " .. tostring(world.errors[1]))
+    check(not ChatHas("error"), "no error shown")
+    ns.Toggle()
+    eq(#world.errors, 0, "closing lets go of the maps without an error")
+end)
+
+RealMaps("real maps: from Camp Taurajo to the floor of Thousand Needles by the Great Lift", function()
+    NewWorld()
+    world.mapAddons.DropOff_Paths_Kalimdor = "real"
+    world.lifts = true
+    local ns = Load()
+    local leg, answer = RealWalk(ns, { continent = 1, x = -2380.7, y = -1882.7 }, { continent = 1, x = -4900, y = -1950 })
+    check(leg.real, "a real path")
+    check(leg.lift ~= nil, "with a lift")
+    check(PassesBy(leg.path, -4668.1, -1838.64, 6), "the Great Lift")
+    check(leg.yards > 2500 and leg.yards < 2900, "about 2700 yards: " .. math.floor(leg.yards))
+    check(type(answer.direct) == "number" and answer.direct > leg.yards + 140,
+        "shorter than the way round on foot: " .. tostring(answer.direct))
+    eq(#world.errors, 0, "the router raised nothing: " .. tostring(world.errors[1]))
+end)
+
+RealMaps("real maps: a hand-in under another floor is reached on its own floor", function()
+    NewWorld()
+    world.mapAddons.DropOff_Paths_EasternKingdoms = "real"
+    world.lifts = true
+    local ns = Load()
+    -- From Brill to the bat handler of the Undercity, under the Ruins of Lordaeron.
+    local leg, answer = RealWalk(ns, { continent = 0, x = 2260, y = 290 }, { continent = 0, x = 1567.1, y = 266.3 })
+    eq(world.loadCalls[1], "DropOff_Paths_EasternKingdoms", "with the maps of the Eastern Kingdoms")
+    eq(answer.to.z, -42, "the hand-in's height comes from the spawn table")
+    check(leg.real and leg.lift ~= nil, "down a lift of the city")
+    check(leg.yards > 700 and leg.yards < 1000, "about 850 yards, not 1500 through the sewers: " .. math.floor(leg.yards))
+    check(type(answer.direct) == "number" and answer.direct > 1300, "the way on foot alone: " .. tostring(answer.direct))
+    eq(#world.errors, 0, "the router raised nothing: " .. tostring(world.errors[1]))
+end)
+
+RealMaps("real maps: out of the Undercity the walk goes up a lift", function()
+    NewWorld()
+    local x, y = OnMap(1458, 1596, 240)
+    world.player = { map = 1458, x = x, y = y }
+    world.mapAddons.DropOff_Paths_EasternKingdoms = "real"
+    world.lifts = true
+    local ns = Load()
+    -- From the middle of the city, under the ruins, to Brill.
+    local leg, answer = RealWalk(ns, { continent = 0, x = 1596, y = 240 }, { continent = 0, x = 2260, y = 290 })
+    eq(answer.from.z, -43.1, "the walk starts on the city's floor")
+    check(leg.real and leg.lift ~= nil, "up a lift: " .. tostring(answer.reason))
+    check(leg.yards > 750 and leg.yards < 1050, "about 900 yards: " .. math.floor(leg.yards))
+    check(type(answer.direct) == "number" and answer.direct > 1300, "not out through the sewers: " .. tostring(answer.direct))
+    eq(#world.errors, 0, "the router raised nothing: " .. tostring(world.errors[1]))
+end)
+
+---------------------------------------------------------------------------
+-- Packaging
+---------------------------------------------------------------------------
+
+test("each map addon lists every map file of its folder and follows DropOff's version", function()
+    local version
+    for line in io.lines(ROOT .. "DropOff.toc") do version = version or line:match("^## Version: (%S+)") end
+    check(version ~= nil, "DropOff.toc has a version")
+    local prefix = { DropOff_Paths_EasternKingdoms = "Nav0", DropOff_Paths_Kalimdor = "Nav1", DropOff_Paths_Zephras = "Nav2991" }
+    for name in pairs(MAP_ADDONS) do
+        current = "map addon " .. name
+        local listed, fields = {}, {}
+        for line in io.lines(ROOT .. name .. "/" .. name .. ".toc") do
+            local field, value = line:match("^## ([%w%-]+): (.-)%s*$")
+            if field then fields[field] = value end
+            local file = line:match("^([%w_]+%.lua)%s*$")
+            if file then listed[#listed + 1] = file end
+        end
+        eq(fields.Version, version, "its version is DropOff's")
+        eq(fields.LoadOnDemand, "1", "loaded on demand")
+        eq(fields.Dependencies, "DropOff", "after DropOff")
+        eq(fields.Interface, "16001", "for this game version")
+        eq(listed[1], prefix[name] .. ".lua", "the map's table first")
+        for index = 2, #listed do eq(listed[index], prefix[name] .. "_" .. (index - 1) .. ".lua", "then its parts in order") end
+        for _, file in ipairs(listed) do check(FileExists(ROOT .. name .. "/" .. file), file .. " is in the folder") end
+        check(not FileExists(ROOT .. name .. "/" .. prefix[name] .. "_" .. #listed .. ".lua"), "and no part is left out")
+    end
 end)
 
 ---------------------------------------------------------------------------

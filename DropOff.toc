@@ -3,15 +3,15 @@
 ## Notes: Guides you to turn in finished quests, quickest first, with the whole trip: flights, zeppelins, boats.
 ## Notes-frFR: Te guide pour rendre tes quêtes terminées, les plus rapides d'abord, avec tout le trajet : vols, zeppelins, bateaux.
 ## Author: Edwin (Team Baguette)
-## Version: 0.6.0
+## Version: 0.7.0
 ## IconTexture: Interface\Icons\INV_Misc_Bag_08
 ## Category: Quests
 ## Category-frFR: Quêtes
-## OptionalDeps: Questie, QuestieDB, TomTom, OpenMap, Polestar
+## OptionalDeps: Questie, QuestieDB, TomTom, OpenMap
 ## SavedVariables: DropOffDB
 ## SavedVariablesPerCharacter: DropOffCharDB
 ## AddonCompartmentFunc: DropOff_OnAddonCompartmentClick
-## X-License: MIT
+## X-License: GPL-3.0-or-later
 ## X-Website: https://github.com/hasuwini77/dropoff
 
 Locales.lua
@@ -21,6 +21,11 @@ Geo.lua
 TravelData.lua
 Passes.lua
 Route.lua
+Router\PathGrid.lua
+Router\Path.lua
+Router\PathJobs.lua
+Router\Heights.lua
+Lifts.lua
 Walk.lua
 Plan.lua
 Nav.lua
