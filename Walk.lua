@@ -9,8 +9,9 @@ local Try = ns.Try
 --
 -- The router is Polestar's (the addon Polestar_Nav, which Polestar loads at
 -- login): it hands itself over as the global Polestar_NavEngine. DropOff
--- holds none of its code or maps and never loads it: it calls what is there,
--- at run time, and checks every function before calling it.
+-- holds none of its code or maps and never loads that addon: it calls what
+-- is there, at run time, and checks every function before calling it. The
+-- router loads its own maps of a continent at the first search there.
 --
 --   engine.Find(continent, from, to, callback, opts) -> a handle
 --       from, to: { x, y } in the game's world yards
@@ -22,11 +23,11 @@ local Try = ns.Try
 local Walk = {}
 ns.Walk = Walk
 
-local STRAY = 25            -- yards off the path: ask for a new one
-local KEEP = 150            -- yards off the path: it is not drawn any more
-local ASK_EVERY = 5         -- seconds between two asks for the same place
-local FAIL_RETRY = 15       -- a walk the router found no way for is asked again this late,
-local FAIL_MOVED = 25       -- and only from this many yards further
+local OFF_PATH = 30         -- yards from the path at which the player has left it: a new one is wanted
+local KEEP = 150            -- yards from the path beyond which it is not drawn any more
+local SEARCH_GAP = 5        -- seconds after an answer before the same walk is searched again
+local NO_WAY_WAIT = 20      -- "no way on foot" is asked again after this many seconds,
+local NO_WAY_MOVED = 30     -- and only once the player is this many yards from where it was asked
 local ERROR_RETRY = 30      -- seconds before asking again after an error or no answer
 local GIVE_UP = 90          -- seconds without an answer
 local AIM_AHEAD = 80        -- yards along the path: the arrow points at the first turn past this
@@ -271,10 +272,10 @@ local function Find(engine, from, to, playerContinent, wanted)
     if entry and entry.points then
         local index, off = Along(entry.points, from)
         if off <= KEEP then path, yards = Ahead(entry, from, index) end
-        ask = off > STRAY and now - entry.askedAt >= (entry.reason and ERROR_RETRY or ASK_EVERY)
+        ask = off > OFF_PATH and now - entry.askedAt >= (entry.reason and ERROR_RETRY or SEARCH_GAP)
     elseif entry and entry.reason then
         if NO_WAY[entry.reason] then
-            ask = now - entry.askedAt >= FAIL_RETRY and Yards(entry.from, from) >= FAIL_MOVED
+            ask = now - entry.askedAt >= NO_WAY_WAIT and Yards(entry.from, from) >= NO_WAY_MOVED
         else
             ask = now - entry.askedAt >= ERROR_RETRY
         end
@@ -383,6 +384,14 @@ function Walk.State()
         answers = {},
     }
     for index, answer in ipairs(answers) do state.answers[index] = answer end
+    -- With no router: is its addon not loaded, or loaded without handing one over?
+    local loaded = type(C_AddOns) == "table" and C_AddOns.IsAddOnLoaded
+    if type(loaded) == "function" then
+        state.addons = {}
+        for _, name in ipairs({ "Polestar", "Polestar_Nav" }) do
+            state.addons[name] = Try(loaded, name) and true or false
+        end
+    end
     if engine then
         state.maps = {}
         for continent = 0, 1 do
