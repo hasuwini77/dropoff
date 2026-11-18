@@ -1539,6 +1539,46 @@ test("on OpenMap's stitched map the line uses its coordinates and sits over its 
     OpenMapAPI, WorldMapFrame = nil, nil
 end)
 
+test("on the stitched map a point OpenMap cannot place is not drawn", function()
+    TravelScene(HAMMERFALL[1] - 200, HAMMERFALL[2])
+    local ns = Load()
+    OpenWorldMap(1440)   -- the map underneath shows Kalimdor
+    OpenMapAPI = {
+        major = 1,
+        IsStitched = function() return true end,
+        CanvasFromWorldPos = function(continent, x, y)
+            if continent == 0 then return x / 100000, y / 100000 end
+        end,
+    }
+    ns.Toggle()
+    eq(#ShownLines(), 3, "the Eastern Kingdoms' stretches only: the others are not placed by the map underneath")
+    ns.Toggle()
+    OpenMapAPI, WorldMapFrame = nil, nil
+end)
+
+test("the line is made once the world map exists, and follows the player", function()
+    TravelScene(HAMMERFALL[1] - 200, HAMMERFALL[2])
+    local ns = Load()
+    ns.Toggle()
+    eq(ns.Trail.State().lines, 0, "no world map yet: no line")
+    check(ns.Trail.State().drawn, "the dots are down")
+
+    OpenWorldMap(1417)
+    Advance(2)
+    check(ns.Trail.State().lines > 0, "the map is there now: the same route gets its lines")
+    local walk = ShownLines()[1]
+    local px = OnMap(1417, HAMMERFALL[1] - 200, HAMMERFALL[2])
+    check(math.abs(walk.from[1] - px * 1000) < 0.01, "from the player")
+
+    world.player.x, world.player.y = OnMap(1417, HAMMERFALL[1] - 180, HAMMERFALL[2])
+    Advance(2)
+    ns.Trail.Layout()
+    px = OnMap(1417, HAMMERFALL[1] - 180, HAMMERFALL[2])
+    check(math.abs(ShownLines()[1].from[1] - px * 1000) < 0.01, "twenty yards on, the line starts at the player again")
+    ns.Toggle()
+    WorldMapFrame = nil
+end)
+
 test("a world map that cannot take a line leaves the dots alone", function()
     TravelScene(HAMMERFALL[1] - 200, HAMMERFALL[2])
     local ns = Load()

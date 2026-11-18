@@ -215,17 +215,19 @@ local function OnMap(continent, gx, gy, mapId)
     return nil
 end
 
-local shownContinent = {}
+local shownContinent, shownAsked = {}, {}
 
 -- A world point on a map, also when it lies outside it: x, y with 0..1 the
 -- map itself. Nil when the map shows another continent, or nothing can tell.
 function Geo.OnShownMap(mapId, continent, gx, gy)
     if type(mapId) ~= "number" then return nil end
-    if not shownContinent[mapId] then
-        local _, _, shown = Geo.World(mapId, 0.5, 0.5)
-        shownContinent[mapId] = shown
+    local shown = shownContinent[mapId]
+    if shown == nil or (shown == false and Clock() - shownAsked[mapId] >= RETRY) then
+        local _, _, found = Geo.World(mapId, 0.5, 0.5)
+        shown = found or false
+        shownContinent[mapId], shownAsked[mapId] = shown, Clock()
     end
-    if shownContinent[mapId] ~= continent then return nil end
+    if shown ~= continent then return nil end
     local hbd = HBD()
     if hbd and hbd.GetZoneCoordinatesFromWorld then
         local ok, x, y = pcall(hbd.GetZoneCoordinatesFromWorld, hbd, gy, gx, mapId, true)
