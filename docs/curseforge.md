@@ -4,7 +4,7 @@ Publishing is free. It needs a CurseForge author account, which is why the proje
 
 ## Before you start
 
-- Check the addon in game first: `/dropoff`, hand in one quest, watch the arrow move to the next.
+- Check the addon in game first: `/dropoff`, follow the steps to one hand-in, watch everything move to the next quest.
 - Make the GitHub repo public, otherwise the source and issue links below lead nowhere:
   `gh repo edit hasuwini77/dropoff --visibility public --accept-visibility-change-consequences`
 - Have a square logo ready, 400x400 or larger.
@@ -26,24 +26,24 @@ Publishing is free. It needs a CurseForge author account, which is why the proje
    `## X-Curse-Project-ID: <id>`
 2. Create an API token at https://authors.curseforge.com/#/settings/api-tokens and store it as a repo secret:
    `gh secret set CF_API_TOKEN --repo hasuwini77/dropoff`
-3. Set `## Version: 0.2.2` in the same file and add a `0.2.2` entry to `CHANGELOG.md`. The version shown in game comes from the TOC, not from the tag.
+3. Set the next version in the same file (`## Version: 0.3.1`) and add its entry to `CHANGELOG.md`. The version shown in game comes from the TOC, not from the tag.
 4. Commit, then tag and push:
-   `git tag v0.2.2 && git push origin v0.2.2`
+   `git tag v0.3.1 && git push origin v0.3.1`
 
 The release workflow runs the tests, builds `DropOff-<tag>.zip`, attaches it to a GitHub release and uploads it to CurseForge. The packager reads `## Interface: 16001` and files the upload under WoW Forever.
 
-Tags up to `v0.2.1` were pushed before the workflows existed, so they have no zip. The first file on CurseForge is `v0.2.2`.
+Tags up to `v0.3.0` were pushed before the workflows existed, so they have no zip. The first file on CurseForge is the next tag.
 
 ## Summary (English)
 
 ```
-Lists your finished quests, shows the bag slots each one frees, and points you to the nearest turn-in.
+Lists your finished quests and the bag slots each frees, then gives you the whole trip to the turn-in.
 ```
 
 ## Summary (French)
 
 ```
-Liste tes quêtes terminées, les emplacements de sac que chacune libère, et te guide vers la plus proche.
+Liste tes quêtes terminées, les emplacements que chacune libère, et te donne tout le trajet pour les rendre.
 ```
 
 ## Description (English)
@@ -51,13 +51,15 @@ Liste tes quêtes terminées, les emplacements de sac que chacune libère, et te
 ```
 DropOff is for the moment your bags are full and half of what is in them is quest items.
 
-It reads your bags and your quest log, finds the quests you have already finished, and tells you how many bag slots each one gives back when you hand it in. Quests holding items come first, and among those the nearest hand-in comes first. Open the window and an arrow points to the first one. Hand it in and the arrow moves to the next.
+It reads your bags and your quest log, finds the quests you have already finished, and tells you how many bag slots each one gives back when you hand it in. Quests holding items come first, and among those the quickest to reach comes first. Open the window and you get the trip to the first one, step by step: go to the flight master, fly to Orgrimmar, take the zeppelin, walk to the quest giver. Hand it in and you get the trip to the next.
 
 What you get
 
-- A list of finished quests, with the slots each one frees and the distance to the hand-in.
-- An arrow to the next one. It uses TomTom if you have it and the game's own map pin if you don't.
-- Click a quest to go there first. Click it again to go back to nearest first.
+- A list of finished quests, with the slots each one frees and the distance or travel time to the hand-in.
+- The trip to the current quest as numbered steps, with flights, zeppelins and boats, and a time estimate. It is an estimate: walks are straight lines, not roads.
+- An arrow to the next stop of the trip. It uses TomTom if you have it and the game's own map pin if you don't.
+- The trip drawn as a dotted line on the world map and the minimap.
+- Click a quest to go there first. Click it again to go back to quickest first.
 - The map icon next to a quest opens the world map on its hand-in.
 - Two more lists, without directions for now: quests in progress that hold items, and quest items that belong to no quest in your log.
 - One chat line when your bags are nearly full and finished quests are holding slots. Type /dropoff alert to turn it off.
@@ -66,6 +68,7 @@ Requirements
 
 - Questie, for the hand-in locations. Without it you still get the list and the slot counts, but no directions.
 - TomTom is optional.
+- DropOff learns your flight paths when you open a flight map. Until then it takes them as known.
 
 Commands
 
@@ -84,13 +87,15 @@ Found a wrong list or a missing hand-in? Open an issue: https://github.com/hasuw
 ```
 DropOff sert au moment où tes sacs sont pleins et que la moitié du contenu, ce sont des objets de quête.
 
-L'addon lit tes sacs et ton journal de quêtes, repère les quêtes déjà terminées et t'indique combien d'emplacements chacune libère quand tu la rends. Les quêtes qui occupent des emplacements passent en premier, et parmi elles la plus proche d'abord. Ouvre la fenêtre : une flèche pointe vers la première. Rends-la et la flèche passe à la suivante.
+L'addon lit tes sacs et ton journal de quêtes, repère les quêtes déjà terminées et t'indique combien d'emplacements chacune libère quand tu la rends. Les quêtes qui occupent des emplacements passent en premier, et parmi elles la plus rapide à rejoindre d'abord. Ouvre la fenêtre : tu as le trajet jusqu'à la première, étape par étape : rejoindre le maître de vol, voler jusqu'à Orgrimmar, prendre le zeppelin, finir à pied. Rends-la et tu as le trajet vers la suivante.
 
 Ce que tu as
 
-- La liste des quêtes terminées, avec les emplacements libérés et la distance jusqu'au PNJ.
-- Une flèche vers la prochaine. Elle passe par TomTom si tu l'as, sinon par le repère de carte du jeu.
-- Clique sur une quête pour y aller en premier. Clique à nouveau pour revenir à la plus proche d'abord.
+- La liste des quêtes terminées, avec les emplacements libérés et la distance ou le temps de trajet jusqu'au PNJ.
+- Le trajet vers la quête en cours en étapes numérotées, avec les vols, les zeppelins et les bateaux, et une durée estimée. C'est une estimation : les trajets à pied sont comptés en ligne droite, pas par les routes.
+- Une flèche vers la prochaine étape. Elle passe par TomTom si tu l'as, sinon par le repère de carte du jeu.
+- Le trajet tracé en pointillés sur la carte du monde et la minicarte.
+- Clique sur une quête pour y aller en premier. Clique à nouveau pour revenir à la plus rapide d'abord.
 - L'icône de carte à côté d'une quête ouvre la carte du monde sur l'endroit où la rendre.
 - Deux autres listes, sans guidage pour l'instant : les quêtes en cours qui occupent des emplacements, et les objets de quête liés à aucune quête de ton journal.
 - Une ligne dans le chat quand tes sacs sont presque pleins et que des quêtes terminées occupent des emplacements. Tape /dropoff alert pour la couper.
@@ -99,6 +104,7 @@ Prérequis
 
 - Questie, pour savoir où rendre chaque quête. Sans lui tu gardes la liste et le nombre d'emplacements, mais pas le chemin.
 - TomTom est facultatif.
+- DropOff apprend tes trajets de vol quand tu ouvres une carte de vol. En attendant, il les considère comme connus.
 
 Commandes
 
