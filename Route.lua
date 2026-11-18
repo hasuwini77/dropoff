@@ -16,6 +16,8 @@ local ARRIVE = 30           -- yards: this close to a flight master or a dock is
 local PASS_NEAR = 200       -- yards: this close to a pass, the walk to it is done
 local DOCK_ZONE = 1200      -- yards: a dock is in the zone of a flight master this close
 local NAMES_RETRY = 10      -- seconds before asking the game for names again
+local PASS_RETRY = 10       -- seconds before placing again the passes the game could not place
+local PASS_TRIES = 5        -- how many times, after the first build
 
 local CONTINENT_MAPS = { 1415, 1414 }   -- Eastern Kingdoms, Kalimdor
 local FACTION = { Horde = "H", Alliance = "A" }
@@ -25,6 +27,8 @@ local LEARNED_TYPE = { CURRENT = true, REACHABLE = true, UNREACHABLE = true }
 
 local hubs, edges           -- the travel graph, built when first needed
 local builtFor              -- the faction it was built for (false: not known yet)
+local builtAt               -- when it was built
+local passCount = { total = 0, placed = 0, tries = 0 }   -- how the passes were placed
 local origin                -- where the last pass started
 local cost, cameFrom, cameBy   -- per hub: seconds from the origin, previous hub, edge used
 
@@ -126,8 +130,23 @@ local function WalkSeconds(yards)
     return yards * DETOUR / WALK_SPEED
 end
 
+local function Now()
+    return type(GetTime) == "function" and GetTime() or 0
+end
+
+-- A pass of the table in world yards, or nil when the game cannot place it
+-- (its map is not loaded yet) or places it on another continent than its
+-- zones: it is then left out, never guessed.
+local function PassWorld(pass, continent)
+    if not pass[3] then return pass[4], pass[5] end
+    local x, y, found = ns.Geo.World(pass[3], pass[4] / 100, pass[5] / 100)
+    if x and found == continent then return x, y end
+    return nil
+end
+
 local function Build()
     hubs, edges = {}, {}
+    passCount.total, passCount.placed, builtAt = 0, 0, Now()
     local data = ns.TravelData
     if type(data) ~= "table" then return end
     local mine = Faction()
@@ -192,10 +211,17 @@ local function Build()
         end
     end
 
-    -- Passes: where two zones join on foot.
+    -- Passes: where two zones join on foot. One the game cannot place is left
+    -- out, and the two zones stay apart until a later build places it: the
+    -- zone check is never dropped for it.
     for _, pass in ipairs(passes and passes.passes or {}) do
-        add({ continent = passes.zones[pass[1]], x = pass[3], y = pass[4],
-              pass = true, zone = pass[1], zone2 = pass[2] })
+        local continent = passes.zones[pass[1]]
+        local x, y = PassWorld(pass, continent)
+        passCount.total = passCount.total + 1
+        if x then
+            passCount.placed = passCount.placed + 1
+            add({ continent = continent, x = x, y = y, pass = true, zone = pass[1], zone2 = pass[2] })
+        end
     end
 
     -- On foot between two hubs of one continent that share a zone.
@@ -214,6 +240,21 @@ end
 -- has changed.
 function Route.Reset()
     hubs, edges, origin = nil, nil, nil
+    passCount.tries = 0
+end
+
+-- Some passes could not be placed, and it is time to try again.
+local function PassesDue()
+    if passCount.placed == passCount.total or passCount.tries >= PASS_TRIES then return false end
+    if Now() - builtAt < PASS_RETRY then return false end
+    passCount.tries = passCount.tries + 1
+    return true
+end
+
+-- For the debug snapshot: how many passes the table has, how many the game
+-- placed, and how many times placing the rest was tried again.
+function Route.PassState()
+    return { total = passCount.total, placed = passCount.placed, tries = passCount.tries }
 end
 
 ---------------------------------------------------------------------------
@@ -228,7 +269,8 @@ function Route.Begin(x, y, continent, mapId)
     origin = nil
     if type(x) ~= "number" or type(y) ~= "number" or type(continent) ~= "number" then return false end
     -- Built once, and again if the faction was not known the first time (login).
-    if not hubs or builtFor ~= (Faction() or false) then Build() end
+    -- And again while some passes are not placed.
+    if not hubs or builtFor ~= (Faction() or false) or PassesDue() then Build() end
     origin = { continent = continent, x = x, y = y, zone = Route.Zone(mapId) }
     cost, cameFrom, cameBy = {}, {}, {}
 

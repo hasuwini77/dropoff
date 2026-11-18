@@ -8,17 +8,20 @@
 --   names[name]     = the zone, as the flight masters' names spell it
 --   docks[key]      = the zone of a dock with no flight master near it,
 --                     key: "continent:x:y" as the travel data gives them
---   passes[i]       = { zone, zone, x, y }: world yards, x north and y west
+--   passes[i]       = { zone, zone, map, x, y }: a point of `map` (one of the
+--                     two zones), x and y in percent as the world map shows
+--                     them. The game turns it into world yards when the
+--                     routes are built. With `map` false, x and y are world
+--                     yards already (x north, y west).
 --
 -- A zone that is not listed (Riverglades, Mount Hyjal, Zephras Isle) is not
 -- checked: walks to and from it are straight lines, as before.
 --
--- Most positions come from the chokepoint list of Polestar's walking maps
--- (github.com/fitzforge/polestar, GNU GPL version 3, see
--- LICENSES/Polestar.txt), thinned to one point every 400 yards. The Talondeep
--- Path, Timbermaw Hold, Feralas to Thousand Needles, Hillsbrad to the
--- Hinterlands and the river round Duskwood were entered by hand from the zone
--- maps and are approximate.
+-- Every pass was entered by hand, from where the road crosses on the zone
+-- maps. They are approximate: a few hundred yards off at worst, which moves
+-- the line on the map and the walking estimate, not the choice of zones.
+-- Only links walked on a road, a bridge or through a tunnel are listed: no
+-- swim along a coast, no climb.
 
 local _, ns = ...
 
@@ -55,120 +58,54 @@ ns.TravelPasses = {
         ["0:544.8:424.2"] = 1416,   -- the airship tower in the Alterac Mountains
     },
     passes = {
-        { 1411, 1413, -1124, -4365 },
-        { 1411, 1413, -247, -3830 },
-        { 1411, 1413, 194, -3775 },
-        { 1411, 1413, 655, -3799 },
-        { 1411, 1413, 1057, -3869 },
-        { 1411, 1447, 2073, -5470 },
-        { 1412, 1413, -2531, -1540 },
-        { 1412, 1413, -2060, -1463 },
-        { 1412, 1413, -1472, -1236 },
-        { 1412, 1413, -949, -1302 },
-        { 1412, 1413, -600, -1077 },
-        { 1412, 1442, -380, -112 },
-        { 1412, 1443, -650, 560 },
-        { 1413, 1440, 1328, -2148 },
-        { 1413, 1440, 1709, -3767 },
-        { 1413, 1441, -4862, -2257 },
-        { 1413, 1441, -4596, -1833 },
-        { 1413, 1442, -238, -852 },
-        { 1413, 1442, 504, -896 },
-        { 1413, 1445, -4671, -2693 },
-        { 1413, 1445, -3952, -2531 },
-        { 1413, 1445, -3520, -2530 },
-        { 1413, 1445, -2380, -3830 },
-        { 1416, 1421, -22, 451 },
-        { 1416, 1421, 431, 530 },
-        { 1416, 1422, 618, -1771 },
-        { 1416, 1422, 824, -1172 },
-        { 1416, 1424, -232, 217 },
-        { 1416, 1424, -132, -406 },
-        { 1416, 1424, 242, -1201 },
-        { 1417, 1424, -1779, -1361 },
-        { 1417, 1424, -832, -1580 },
-        { 1417, 1425, -1062, -4350 },
-        { 1417, 1437, -2368, -2519 },
-        { 1418, 1427, -6944, -2072 },
-        { 1418, 1432, -6266, -2900 },
-        { 1418, 1432, -6234, -2375 },
-        { 1418, 1432, -5998, -3277 },
-        { 1419, 1435, -10886, -3668 },
-        { 1419, 1435, -10664, -2902 },
-        { 1420, 1421, 1500, 487 },
-        { 1420, 1422, 1741, -798 },
-        { 1420, 1422, 2299, -1265 },
-        { 1420, 1422, 2724, -1256 },
-        { 1420, 1422, 3237, -1067 },
-        { 1420, 1422, 3292, -1644 },
-        { 1420, 1422, 3300, -2114 },
-        { 1420, 1423, 3415, -2267 },
-        { 1420, 1423, 3963, -2266 },
-        { 1421, 1424, -586, 632 },
-        { 1422, 1423, 1451, -3063 },
-        { 1422, 1423, 1732, -2674 },
-        { 1422, 1423, 2243, -2570 },
-        { 1422, 1425, 798, -2412 },
-        { 1423, 1425, 1330, -4137 },
-        { 1424, 1425, 222, -1844 },
-        { 1426, 1427, -6884, 264 },
-        { 1426, 1427, -6167, -761 },
-        { 1426, 1427, -6098, -1191 },
-        { 1426, 1432, -5482, -2595 },
-        { 1426, 1437, -5220, 1068 },
-        { 1426, 1437, -4778, 1064 },
-        { 1426, 1437, -4234, -900 },
-        { 1426, 1437, -4176, -1660 },
-        { 1427, 1428, -7534, -229 },
-        { 1427, 1428, -7534, 351 },
-        { 1427, 1428, -7393, -1082 },
-        { 1428, 1429, -7999, 387 },
-        { 1428, 1429, -7998, 941 },
-        { 1428, 1433, -8661, -2557 },
-        { 1429, 1431, -10005, -1192 },
-        { 1429, 1431, -9969, 293 },
-        { 1429, 1431, -9879, -382 },
-        { 1429, 1433, -9830, -1703 },
-        { 1429, 1433, -9320, -1742 },
-        { 1429, 1436, -10031, 734 },
-        { 1429, 1436, -9564, 1013 },
-        { 1430, 1431, -10462, -1633 },
-        { 1430, 1435, -10548, -2340 },
-        { 1430, 1435, -10140, -2208 },
-        { 1431, 1433, -9950, -1738 },
-        { 1431, 1434, -11332, -790 },
-        { 1431, 1434, -11295, -274 },
-        { 1431, 1434, -11260, 204 },
-        { 1431, 1436, -10869, 617 },
-        { 1431, 1436, -10347, 617 },
-        { 1432, 1437, -6187, -4190 },
-        { 1432, 1437, -5806, -4323 },
-        { 1432, 1437, -5309, -4407 },
-        { 1432, 1437, -4866, -4400 },
-        { 1432, 1437, -4266, -4291 },
-        { 1433, 1435, -9601, -3778 },
-        { 1434, 1436, -11567, 1407 },
-        { 1434, 1436, -11355, 634 },
-        { 1439, 1440, 4063, 511 },
-        { 1439, 1440, 4166, 20 },
-        { 1439, 1440, 4273, 1035 },
-        { 1440, 1442, 1944, -739 },
-        { 1440, 1447, 2820, -3786 },
-        { 1440, 1448, 3567, -1585 },
-        { 1441, 1444, -4466, -730 },
-        { 1441, 1445, -5366, -4018 },
-        { 1441, 1445, -5350, -3433 },
-        { 1441, 1445, -4723, -4365 },
-        { 1441, 1446, -6835, -3777 },
-        { 1441, 1446, -6432, -4534 },
-        { 1441, 1446, -6012, -4533 },
-        { 1442, 1443, 336, 930 },
-        { 1442, 1443, 366, 1797 },
-        { 1443, 1444, -2471, 2318 },
-        { 1445, 1446, -5365, -4903 },
-        { 1446, 1449, -8230, -2099 },
-        { 1448, 1450, 6819, -2102 },
-        { 1448, 1452, 6568, -2206 },
-        { 1449, 1451, -6245, -467 },
+        -- Kalimdor
+        { 1411, 1413, 1411, 34.5, 42.5 },   -- the bridge over the Southfury River, west of Razor Hill
+        { 1412, 1413, 1412, 68.5, 60.5 },   -- the road out of Mulgore, to Camp Taurajo
+        { 1412, 1443, false, -802, 366.5 }, -- WoW Forever: the plateau between them, at its airship mooring
+        { 1413, 1440, 1440, 68.5, 87 },     -- the Mor'shan Rampart
+        { 1413, 1442, 1413, 35.5, 27.5 },   -- Honor's Stand
+        { 1413, 1445, 1413, 50, 78.5 },     -- the road east into the marsh
+        { 1413, 1441, 1441, 32, 22 },       -- the Great Lift
+        { 1440, 1442, 1440, 42.5, 71 },     -- the Talondeep Path
+        { 1442, 1443, 1443, 54, 5 },        -- the road south out of the Charred Vale
+        { 1443, 1444, 1444, 44.5, 6 },      -- the road south, to the Twin Colossals
+        { 1441, 1444, 1444, 89, 45.5 },     -- the road east out of Feralas
+        { 1441, 1446, 1446, 51.5, 20.5 },   -- the pass north of Gadgetzan
+        { 1446, 1449, 1449, 70.5, 77.5 },   -- the ramp down into the crater
+        { 1449, 1451, 1449, 29.5, 22.5 },   -- the ramp up to Silithus
+        { 1439, 1440, 1439, 43.5, 93 },     -- the road south along the coast
+        { 1440, 1448, 1440, 55.5, 29 },     -- the road north into Felwood
+        { 1440, 1447, 1440, 93.5, 47.5 },   -- the road east into Azshara
+        { 1448, 1452, 1448, 65, 8 },        -- Timbermaw Hold
+        { 1448, 1450, 1448, 65, 8 },        -- Timbermaw Hold
+        -- Eastern Kingdoms
+        { 1420, 1421, 1421, 67, 5 },        -- the road south into Silverpine
+        { 1420, 1422, 1422, 28, 57 },       -- the Bulwark
+        { 1421, 1424, 1424, 13.5, 46.5 },   -- the road east into Hillsbrad
+        { 1416, 1424, 1424, 55, 12 },       -- the road north of Tarren Mill
+        { 1416, 1422, 1422, 44.5, 86.5 },   -- the road south of Chillwind Camp
+        { 1417, 1424, 1417, 20.5, 30 },     -- the road west out of Arathi
+        { 1424, 1425, 1425, 7, 48.5 },      -- the path up into the Hinterlands
+        { 1422, 1425, 1425, 24, 30 },       -- the path north of Aerie Peak
+        { 1422, 1423, 1422, 69.5, 50 },     -- the bridge over the Thondroril River
+        { 1417, 1437, 1437, 51.5, 9.5 },    -- the Thandol Span
+        { 1432, 1437, 1437, 53, 71 },       -- Dun Algaz
+        { 1426, 1432, 1426, 86, 51 },       -- the gate passes east of Dun Morogh
+        { 1418, 1432, 1432, 47, 78 },       -- the road south out of Loch Modan
+        { 1418, 1427, 1418, 5.5, 61 },      -- the pass west out of the Badlands
+        { 1427, 1428, 1427, 34.5, 85 },     -- Blackrock Mountain
+        { 1428, 1433, 1433, 33, 7.5 },      -- the road north out of Redridge
+        { 1429, 1433, 1429, 93, 72.5 },     -- the Three Corners
+        { 1431, 1433, 1431, 93.5, 10.5 },   -- the bridge at the Three Corners
+        { 1429, 1431, 1431, 20, 14 },       -- the bridges over the river north of Duskwood
+        { 1429, 1431, 1431, 45, 9 },
+        { 1429, 1431, 1431, 75, 16 },
+        { 1431, 1436, 1431, 8, 35 },        -- the river west of Duskwood
+        { 1431, 1436, 1431, 8, 64 },
+        { 1430, 1431, 1431, 92.5, 41 },     -- the road east into Deadwind Pass
+        { 1429, 1436, 1429, 21, 80 },       -- the bridge to Westfall
+        { 1431, 1434, 1434, 39, 3.5 },      -- the road south into Stranglethorn
+        { 1430, 1435, 1435, 4, 36 },        -- the road east out of Deadwind Pass
+        { 1419, 1435, 1419, 51, 6.5 },      -- the road south into the Blasted Lands
     },
 }
