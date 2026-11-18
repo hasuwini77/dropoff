@@ -116,8 +116,18 @@ end
 -- hand-in itself.
 local function NextStop(quest, label, carried)
     local legs = quest.target.legs
-    local first = legs and #legs > 1 and ns.Route.FirstLeg(legs, carried)
-    if first and not legs[first].final then
+    local first = legs and ns.Route.FirstLeg(legs, carried)
+    -- On a walk with a real path the arrow goes from turn to turn, round
+    -- what is in the way, and the hand-in keeps its pin.
+    local turn = first and not carried and ns.Walk.Aim(legs[first])
+    if turn then
+        local mapId, x, y = ns.Geo.Place(turn.continent, turn.x, turn.y)
+        if mapId then
+            return { mapId = mapId, x = x, y = y }, ns.Route.StepText(legs, first, quest.target.name, true),
+                quest.target, label
+        end
+    end
+    if first and #legs > 1 and not legs[first].final then
         local place = ns.Route.NextPlace(legs, carried)
         local mapId, x, y = ns.Geo.Place(place.continent, place.x, place.y)
         if mapId then
