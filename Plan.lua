@@ -35,7 +35,8 @@ local FOREVER_FINISHERS = {
     -- Alterac Mountains. Seen in game on 2026-11-18.
     [79360] = { [4722] = true },
     -- Storm, Earth, and Fire, the same chain with the same leftover: Prate
-    -- Cloudseer. From Forever data only, not seen in game.
+    -- Cloudseer. From Polestar's QuestDB, which is generated from Forever
+    -- data; not seen in game.
     [79361] = { [5905] = true },
 }
 

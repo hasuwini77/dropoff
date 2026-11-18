@@ -326,7 +326,7 @@ function Trail.Show(legs)
     if signature == drawn and not stale then
         Lines()
         -- The world map came since, and the line with it: the dots go.
-        if not (dotted and usedSegments > 0) then
+        if not (dotted and usedSegments > 0 and not lineState.error) then
             Follow(legs)
             return
         end
