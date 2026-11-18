@@ -2,7 +2,8 @@ local _, ns = ...
 local Try, Secret = ns.Try, ns.Secret
 
 -- Plans the trip to a hand-in: on foot, by flight path, boat, zeppelin or
--- airship. It works in seconds along straight lines, so what it returns is an
+-- airship. It works in seconds along straight lines inside a zone, and a walk
+-- changes zone only where the zones join (Passes.lua). What it returns is an
 -- estimate of the fastest way, not a path that follows the roads.
 local Route = {}
 ns.Route = Route
@@ -12,6 +13,8 @@ local DETOUR = 1.3          -- roads are longer than straight lines
 local FLY_SPEED = 30        -- yards a second on a flight path
 local RIDE_SECONDS = 240    -- a boat, zeppelin or airship: the wait plus the crossing
 local ARRIVE = 30           -- yards: this close to a flight master or a dock is "there"
+local PASS_NEAR = 200       -- yards: this close to a pass, the walk to it is done
+local DOCK_ZONE = 1200      -- yards: a dock is in the zone of a flight master this close
 local NAMES_RETRY = 10      -- seconds before asking the game for names again
 
 local CONTINENT_MAPS = { 1415, 1414 }   -- Eastern Kingdoms, Kalimdor
@@ -52,6 +55,65 @@ local function Knows(id, continent)
 end
 
 ---------------------------------------------------------------------------
+-- Zones
+---------------------------------------------------------------------------
+
+local function Passes()
+    return type(ns.TravelPasses) == "table" and ns.TravelPasses or nil
+end
+
+-- The zone a map counts as when walking: a city is the zone around it, a
+-- map inside a zone (a cave, a district) is that zone. Nil for a map the
+-- pass table does not know.
+function Route.Zone(mapId)
+    local data = Passes()
+    if not data then return nil end
+    for _ = 1, 3 do
+        if type(mapId) ~= "number" then return nil end
+        mapId = data.cities[mapId] or mapId
+        if data.zones[mapId] then return mapId end
+        local info = C_Map and C_Map.GetMapInfo and Try(C_Map.GetMapInfo, mapId)
+        mapId = type(info) == "table" and info.parentMapID or nil
+    end
+    return nil
+end
+
+-- "Sun Rock Retreat, Stonetalon Mountains" -> the zone of that flight master.
+local function NodeZone(node)
+    local data = Passes()
+    if not data or not node then return nil end
+    return data.names[node[1]:match(",%s*([^,]+)$") or node[1]]
+end
+
+-- Can a character walk from one place to the other without leaving a zone?
+-- A pass stands in its two zones. The player or a hand-in whose zone is not
+-- known is not checked: it walks anywhere on its continent, as every place
+-- did before. A flight master or a dock in an unknown zone is walked to from
+-- unknown places only: nothing says a known zone joins it, and a trip must
+-- not slip from one zone to another through it.
+local function Joined(a, b)
+    if a.zone and b.zone then
+        return a.zone == b.zone or a.zone == b.zone2
+            or (a.zone2 ~= nil and (a.zone2 == b.zone or a.zone2 == b.zone2))
+    end
+    if a.zone or b.zone then return not (a.zone and b or a).hub end
+    return true
+end
+
+-- The zone a walk is in once through `pass`, heading for `after` (the next
+-- place of the trip) out of `fromZone`.
+local function Beyond(pass, after, fromZone)
+    if after and after.zone then
+        local first = after.zone == pass.zone or after.zone2 == pass.zone
+        local second = after.zone == pass.zone2 or after.zone2 == pass.zone2
+        if first ~= second then return first and pass.zone or pass.zone2 end
+    end
+    if fromZone == pass.zone then return pass.zone2 end
+    if fromZone == pass.zone2 then return pass.zone end
+    return nil
+end
+
+---------------------------------------------------------------------------
 -- Graph
 ---------------------------------------------------------------------------
 
@@ -72,6 +134,7 @@ local function Build()
     builtFor = mine or false
     local function usable(faction) return faction == "B" or faction == mine end
     local function add(hub)
+        hub.hub = true
         hubs[#hubs + 1] = hub
         edges[#hubs] = {}
         return #hubs
@@ -85,7 +148,7 @@ local function Build()
     for _, id in ipairs(ids) do
         local node = data.nodes[id]
         if usable(node[5]) and Knows(id, node[2]) then
-            byNode[id] = add({ continent = node[2], x = node[3], y = node[4], node = id })
+            byNode[id] = add({ continent = node[2], x = node[3], y = node[4], node = id, zone = NodeZone(node) })
         end
     end
     for _, path in ipairs(data.flights or {}) do
@@ -95,12 +158,29 @@ local function Build()
         end
     end
 
-    -- Docks: one hub per platform, shared by the routes that use it.
+    -- Docks: one hub per platform, shared by the routes that use it. A dock
+    -- is in the zone the pass table gives it, else in the zone of the nearest
+    -- flight master, whoever that one serves.
+    local passes = Passes()
+    local function dockZone(place, key)
+        if passes and passes.docks[key] then return passes.docks[key] end
+        local zone, nearest = nil, DOCK_ZONE
+        for _, id in ipairs(ids) do
+            local node = data.nodes[id]
+            if node[2] == place.continent then
+                local yards = Yards(place, { x = node[3], y = node[4] })
+                if yards < nearest then zone, nearest = NodeZone(node), yards end
+            end
+        end
+        return zone
+    end
     local byDock = {}
     local function dock(continent, x, y, near)
         local key = continent .. ":" .. x .. ":" .. y
         if not byDock[key] then
-            byDock[key] = add({ continent = continent, x = x, y = y, dock = true, near = near or nil })
+            local hub = { continent = continent, x = x, y = y, dock = true, near = near or nil }
+            hub.zone = dockZone(hub, key)
+            byDock[key] = add(hub)
         end
         return byDock[key]
     end
@@ -112,10 +192,16 @@ local function Build()
         end
     end
 
-    -- On foot between any two hubs of one continent.
+    -- Passes: where two zones join on foot.
+    for _, pass in ipairs(passes and passes.passes or {}) do
+        add({ continent = passes.zones[pass[1]], x = pass[3], y = pass[4],
+              pass = true, zone = pass[1], zone2 = pass[2] })
+    end
+
+    -- On foot between two hubs of one continent that share a zone.
     for a = 1, #hubs do
         for b = a + 1, #hubs do
-            if hubs[a].continent == hubs[b].continent then
+            if hubs[a].continent == hubs[b].continent and Joined(hubs[a], hubs[b]) then
                 local seconds = WalkSeconds(Yards(hubs[a], hubs[b]))
                 edges[a][#edges[a] + 1] = { to = b, seconds = seconds, kind = "walk" }
                 edges[b][#edges[b] + 1] = { to = a, seconds = seconds, kind = "walk" }
@@ -136,17 +222,18 @@ end
 
 local FROM_ORIGIN = { kind = "walk" }
 
--- x, y: the game's world yards. Returns true when routes can be asked for.
-function Route.Begin(x, y, continent)
+-- x, y: the game's world yards. mapId: the map of the zone the player is in,
+-- when known. Returns true when routes can be asked for.
+function Route.Begin(x, y, continent, mapId)
     origin = nil
     if type(x) ~= "number" or type(y) ~= "number" or type(continent) ~= "number" then return false end
     -- Built once, and again if the faction was not known the first time (login).
     if not hubs or builtFor ~= (Faction() or false) then Build() end
-    origin = { continent = continent, x = x, y = y }
+    origin = { continent = continent, x = x, y = y, zone = Route.Zone(mapId) }
     cost, cameFrom, cameBy = {}, {}, {}
 
     for index, hub in ipairs(hubs) do
-        if hub.continent == continent then
+        if hub.continent == continent and Joined(origin, hub) then
             cost[index], cameFrom[index], cameBy[index] = WalkSeconds(Yards(origin, hub)), 0, FROM_ORIGIN
         end
     end
@@ -177,15 +264,18 @@ end
 
 local function Point(place)
     return { continent = place.continent, x = place.x, y = place.y,
-             node = place.node, dock = place.dock, near = place.near }
+             node = place.node, dock = place.dock, near = place.near,
+             pass = place.pass, zone = place.zone, zone2 = place.zone2 }
 end
 
 -- Appends one stretch of the trip, joining it to the previous one when both
 -- are flights (a flight through several masters is one leg) or both on foot.
+-- A walk that reached a pass ends there: the next one starts a new leg, so
+-- the trip is never shown as one straight line across a zone border.
 local function AddLeg(legs, kind, from, to, seconds, edge)
     local last = legs[#legs]
     local yards = kind == "walk" and Yards(from, to) or nil
-    if last and last.kind == kind and (kind == "fly" or kind == "walk") then
+    if last and last.kind == kind and (kind == "fly" or (kind == "walk" and not last.to.pass)) then
         last.to, last.seconds = Point(to), last.seconds + seconds
         if yards then last.yards = last.yards + yards end
         if kind == "fly" then last.stops = last.stops + 1 end
@@ -198,17 +288,18 @@ local function AddLeg(legs, kind, from, to, seconds, edge)
     }
 end
 
--- Fastest way from the last pass's origin to a world point. Returns the
--- seconds and the legs ({ kind, from, to, seconds, ... }, the last one always
--- the walk to the point), or nil when there is no way.
-function Route.To(x, y, continent)
+-- Fastest way from the last pass's origin to a world point. mapId: the map
+-- of the zone the point is in, when known. Returns the seconds and the legs
+-- ({ kind, from, to, seconds, ... }, the last one always the walk to the
+-- point), or nil when there is no way.
+function Route.To(x, y, continent, mapId)
     if not origin or type(x) ~= "number" or type(y) ~= "number" or type(continent) ~= "number" then return nil end
-    local goal = { continent = continent, x = x, y = y }
+    local goal = { continent = continent, x = x, y = y, zone = Route.Zone(mapId) }
 
     local seconds, lastHub
-    if continent == origin.continent then seconds = WalkSeconds(Yards(origin, goal)) end
+    if continent == origin.continent and Joined(origin, goal) then seconds = WalkSeconds(Yards(origin, goal)) end
     for index, hub in ipairs(hubs) do
-        if cost[index] and hub.continent == continent then
+        if cost[index] and hub.continent == continent and Joined(hub, goal) then
             local total = cost[index] + WalkSeconds(Yards(hub, goal))
             if not seconds or total < seconds then seconds, lastHub = total, index end
         end
@@ -222,23 +313,41 @@ function Route.To(x, y, continent)
         index = cameFrom[index]
     end
 
-    local legs, at = {}, origin
-    for _, hubIndex in ipairs(chain) do
+    -- `at`: where the next leg starts. `through`: the last place of the
+    -- chain, which is a pass the player is already at when it gave no leg.
+    local legs, at, through, zone = {}, origin, origin, origin.zone
+    local skipped = 0   -- seconds of a walk to a pass that gave no leg: the next leg takes them
+    for position, hubIndex in ipairs(chain) do
         local hub, edge = hubs[hubIndex], cameBy[hubIndex]
-        local stretch = edge == FROM_ORIGIN and WalkSeconds(Yards(at, hub)) or edge.seconds
-        -- Already standing at the flight master or on the dock: no step for it.
-        if not (edge.kind == "walk" and Yards(at, hub) < ARRIVE) then
-            AddLeg(legs, edge.kind, at, hub, stretch, edge)
+        local stretch = (edge == FROM_ORIGIN and WalkSeconds(Yards(through, hub)) or edge.seconds) + skipped
+        skipped = 0
+        if hub.pass then
+            zone = Beyond(hub, hubs[chain[position + 1]] or goal, zone)
+            -- At the pass already: the walk goes on from where the player is.
+            if Yards(at, hub) >= PASS_NEAR then
+                AddLeg(legs, "walk", at, hub, stretch, edge)
+                legs[#legs].enter = zone
+                at = hub
+            else
+                skipped = stretch
+            end
+        else
+            -- Already standing at the flight master or on the dock: no step for it.
+            if not (edge.kind == "walk" and Yards(at, hub) < ARRIVE) then
+                AddLeg(legs, edge.kind, at, hub, stretch, edge)
+            end
+            at, zone = hub, hub.zone
         end
-        at = hub
+        through = hub
     end
+    local ending = WalkSeconds(Yards(through, goal)) + skipped
     local last = legs[#legs]
-    if last and last.kind == "walk" then
+    if last and last.kind == "walk" and not last.to.pass then
         -- The trip ends on foot through a hub it does not use: one walk.
         last.to, last.final = Point(goal), true
-        last.seconds, last.yards = last.seconds + WalkSeconds(Yards(at, goal)), last.yards + Yards(at, goal)
+        last.seconds, last.yards = last.seconds + ending, last.yards + Yards(at, goal)
     else
-        AddLeg(legs, "walk", at, goal, WalkSeconds(Yards(at, goal)))
+        AddLeg(legs, "walk", at, goal, ending)
         legs[#legs].final = true
     end
     return seconds, legs
@@ -315,6 +424,8 @@ function Route.StepText(legs, index, who, bare)
         text = Named("STEP_HAND_IN", who)
     elseif leg.to.node then
         text = Named("STEP_TO_FLIGHT", Short(Route.NodeName(leg.to.node)))
+    elseif leg.to.pass then
+        text = Named("STEP_PASS", leg.enter and ns.Geo.MapName(leg.enter) or nil)
     else
         local nextLeg = legs[index + 1]
         text = Named("STEP_TO_" .. (nextLeg and RIDE[nextLeg.kind] or "BOAT"), DockName(leg.to))

@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+- A walk now changes zone only where the zones join. Before, a trip could end with a walk in a straight line across a mountain range. The pass shows as a step of its own ("Walk on into the next zone: Desolace") and the line on the map goes through it.
+- Zones the pass table does not know (Riverglades, Mount Hyjal, Zephras Isle) keep the straight-line estimate.
+- Pass positions come from the chokepoint list of Polestar's walking maps (GNU GPL version 3, `LICENSES/Polestar.txt`).
+
 ## 0.3.0
 
 - The whole trip to a hand-in: flight paths, zeppelins, boats, then the walk. The steps are listed under the current quest with a time estimate.

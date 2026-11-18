@@ -22,7 +22,7 @@ end
 -- The trip to a place: seconds and legs, when the travel network reaches it.
 local function Trip(place)
     local gx, gy, continent = Geo.World(place.mapId, place.x, place.y)
-    if gx then place.eta, place.legs = Route.To(gx, gy, continent) end
+    if gx then place.eta, place.legs = Route.To(gx, gy, continent, place.mapId) end
 end
 
 local function ResolveTarget(quest)
@@ -101,7 +101,8 @@ function Plan.Build()
     local quests, hidden = Data.ReadQuestLog()
     local tied = {}
     Geo.BeginPass()
-    Route.Begin(Geo.PlayerWorld())
+    local px, py, continent = Geo.PlayerWorld()
+    Route.Begin(px, py, continent, Geo.PlayerZone())
 
     -- 1. Items the database ties to each quest.
     for _, quest in ipairs(quests) do

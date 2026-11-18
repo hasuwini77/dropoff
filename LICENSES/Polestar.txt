@@ -1,0 +1,15 @@
+Passes.lua holds positions taken from the chokepoint list of Polestar's
+walking maps (Polestar_Nav, Nav/Chokepoints.lua).
+
+Polestar
+Copyright (c) 2026 The Polestar authors
+https://github.com/fitzforge/polestar
+
+Polestar is free software: you can redistribute it and/or modify it under the
+terms of the GNU General Public License as published by the Free Software
+Foundation, version 3.
+
+Polestar is distributed in the hope that it will be useful, but WITHOUT ANY
+WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR
+A PARTICULAR PURPOSE. See the GNU General Public License for more details:
+https://www.gnu.org/licenses/gpl-3.0.txt

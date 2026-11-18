@@ -168,6 +168,15 @@ function Geo.PlayerWorld()
     return player.gx, player.gy, player.instance
 end
 
+-- The map of the zone the player is in, as of the last pass. Nil when unknown.
+function Geo.PlayerZone()
+    if player.zone == nil then
+        local mapId = C_Map and C_Map.GetBestMapForUnit and Try(C_Map.GetBestMapForUnit, "player")
+        player.zone = Usable(mapId) and mapId or false
+    end
+    return player.zone or nil
+end
+
 -- A map point (x, y in 0..1) in the game's world yards, plus its continent.
 function Geo.World(mapId, x, y)
     local hbd = HBD()
