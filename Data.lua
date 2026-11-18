@@ -366,6 +366,7 @@ function Data.DebugDump()
             entry.target = {
                 name = t.name, mapId = t.mapId, x = t.x, y = t.y, dist = t.dist, zone = t.zone,
                 areaId = t.areaId, dungeon = t.dungeon, friendly = t.friendly, native = t.native,
+                corrected = t.corrected,
                 eta = t.eta, legs = t.legs,
             }
         end

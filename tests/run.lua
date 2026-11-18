@@ -814,6 +814,33 @@ test("finisher of the other faction is skipped", function()
     eq(pelts.target.name, "Horde Tanner", "friendly finisher wins over a closer hostile one")
 end)
 
+test("a quest QuestieDB gives a finisher of another game goes to the Forever one", function()
+    Scene()
+    -- Elemental Aid: Bath'rah stands right here, Rau Cliffrunner far away.
+    world.db.quests[79360] = { objectives = { nil, nil, { { 100 } } }, finishedBy = { { 6176, 4722 } } }
+    world.quests[1].id = 79360
+    world.db.npcs[6176] = { name = "Bath'rah the Windwatcher", spawns = { [14] = { { 41, 50 } } } }
+    world.db.npcs[4722] = { name = "Rau Cliffrunner", spawns = { [14] = { { 90, 90 } } } }
+    local ns = Load()
+    local target
+    for _, quest in ipairs(ns.Plan.Build().ready) do if quest.id == 79360 then target = quest.target end end
+    eq(target.name, "Rau Cliffrunner", "the Forever finisher, though the other one is nearer")
+    check(target.corrected, "and the snapshot can say why")
+
+    -- A Forever finisher who will not talk to this character: the database's own list.
+    world.db.npcs[4722].friendlyToFaction = "A"
+    ns = Load()
+    for _, quest in ipairs(ns.Plan.Build().ready) do if quest.id == 79360 then target = quest.target end end
+    eq(target.name, "Bath'rah the Windwatcher", "the nearest friendly one, as for any quest")
+    check(not target.corrected, "not corrected")
+
+    -- Nor one the database has no place for.
+    world.db.npcs[4722] = { name = "Rau Cliffrunner" }
+    ns = Load()
+    for _, quest in ipairs(ns.Plan.Build().ready) do if quest.id == 79360 then target = quest.target end end
+    eq(target.name, "Bath'rah the Windwatcher", "a finisher with no place is no correction")
+end)
+
 test("object finisher inside a dungeon points at the entrance", function()
     Scene()
     world.db.quests[1].finishedBy = { nil, { 70 } }
