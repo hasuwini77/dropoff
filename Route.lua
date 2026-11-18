@@ -9,6 +9,7 @@ local Route = {}
 ns.Route = Route
 
 local WALK_SPEED = 7        -- yards a second on foot
+Route.WALK_SPEED = WALK_SPEED
 local DETOUR = 1.3          -- roads are longer than straight lines
 local FLY_SPEED = 30        -- yards a second on a flight path
 local RIDE_SECONDS = 240    -- a boat, zeppelin or airship: the wait plus the crossing
@@ -487,6 +488,12 @@ function Route.StepText(legs, index, who, bare)
     end
     if leg.yards and not bare then text = text .. " · " .. L.DIST_YARDS:format(math.floor(leg.yards + 0.5)) end
     return text
+end
+
+-- Is this leg a walk counted along a straight line, with no real path
+-- (Walk.lua)? The window says so under the steps.
+function Route.Straight(leg)
+    return leg.kind == "walk" and leg.yards ~= nil and not leg.real
 end
 
 -- "about 13 min" style duration.

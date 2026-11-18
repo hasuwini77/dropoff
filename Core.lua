@@ -107,6 +107,8 @@ local function PickTarget(plan)
 end
 
 local function DistanceText(target)
+    -- One walk along a real path (Walk.lua): its yards, as the window says.
+    if target.walk then return L.DIST_YARDS:format(math.floor(target.walk + 0.5)) end
     if target.dist then return L.DIST_YARDS:format(math.floor(target.dist + 0.5)) end
     return target.zone or L.DIST_FAR
 end
@@ -116,8 +118,18 @@ end
 -- hand-in itself.
 local function NextStop(quest, label, carried)
     local legs = quest.target.legs
-    local first = legs and #legs > 1 and ns.Route.FirstLeg(legs, carried)
-    if first and not legs[first].final then
+    local first = legs and ns.Route.FirstLeg(legs, carried)
+    -- On a walk with a real path the arrow goes from turn to turn, round
+    -- what is in the way, and the hand-in keeps its pin.
+    local turn = first and not carried and ns.Walk and ns.Walk.Aim(legs[first])
+    if turn then
+        local mapId, x, y = ns.Geo.Place(turn.continent, turn.x, turn.y)
+        if mapId then
+            return { mapId = mapId, x = x, y = y }, ns.Route.StepText(legs, first, quest.target.name, true),
+                quest.target, label
+        end
+    end
+    if first and #legs > 1 and not legs[first].final then
         local place = ns.Route.NextPlace(legs, carried)
         local mapId, x, y = ns.Geo.Place(place.continent, place.x, place.y)
         if mapId then
@@ -132,6 +144,12 @@ end
 local function UpdateGuidance(plan, carried)
     local quest = PickTarget(plan)
     plan.current = quest and quest.id or nil
+    -- The real walks of this trip only, and after the list was put in order:
+    -- the order compares straight lines with straight lines. While something
+    -- carries the player the trip is the one made before boarding.
+    -- (ns.Walk is missing after an update followed by /reload: the game
+    -- reads a new file only when it is started again.)
+    if not carried and ns.Walk then ns.Walk.Use(quest and quest.target) end
     if quest then
         local label = quest.target.name and (quest.title .. " (" .. quest.target.name .. ")") or quest.title
         ns.Nav.Set(NextStop(quest, label, carried))
@@ -271,6 +289,7 @@ end
 function ns.OnHidden()
     DropOffCharDB.open = false
     if ticker then ticker:Cancel(); ticker = nil end
+    if ns.Walk then ns.Walk.Stop() end
     ns.Nav.Clear()
     ns.Trail.Clear()
     ns.state.pinned = nil
