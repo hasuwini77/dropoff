@@ -16,8 +16,8 @@ local ARRIVE = 30           -- yards: this close to a flight master or a dock is
 local PASS_NEAR = 200       -- yards: this close to a pass, the walk to it is done
 local DOCK_ZONE = 1200      -- yards: a dock is in the zone of a flight master this close
 local NAMES_RETRY = 10      -- seconds before asking the game for names again
-local PASS_RETRY = 10       -- seconds before placing again the passes the game could not place
-local PASS_TRIES = 5        -- how many times, after the first build
+local PASS_RETRY = 10       -- seconds before placing again the passes the game could not place,
+local PASS_RETRY_MAX = 300  -- doubled after each try, up to this
 
 local CONTINENT_MAPS = { 1415, 1414 }   -- Eastern Kingdoms, Kalimdor
 local FACTION = { Horde = "H", Alliance = "A" }
@@ -28,7 +28,10 @@ local LEARNED_TYPE = { CURRENT = true, REACHABLE = true, UNREACHABLE = true }
 local hubs, edges           -- the travel graph, built when first needed
 local builtFor              -- the faction it was built for (false: not known yet)
 local builtAt               -- when it was built
-local passCount = { total = 0, placed = 0, tries = 0 }   -- how the passes were placed
+-- How the passes were placed. `waiting`: the game could not place them yet.
+-- `misplaced`: it put them on another continent than their zones.
+local passCount = { total = 0, placed = 0, waiting = 0, misplaced = 0, tries = 0 }
+local passWait = PASS_RETRY -- seconds before the next try
 local origin                -- where the last pass started
 local cost, cameFrom, cameBy   -- per hub: seconds from the origin, previous hub, edge used
 
@@ -134,19 +137,21 @@ local function Now()
     return type(GetTime) == "function" and GetTime() or 0
 end
 
--- A pass of the table in world yards, or nil when the game cannot place it
--- (its map is not loaded yet) or places it on another continent than its
--- zones: it is then left out, never guessed.
+-- A pass of the table in world yards. Nil when the game cannot place it yet
+-- (its map is not ready), or, with true, when it places it on another
+-- continent than its zones: the pass is then left out, never guessed.
 local function PassWorld(pass, continent)
     if not pass[3] then return pass[4], pass[5] end
     local x, y, found = ns.Geo.World(pass[3], pass[4] / 100, pass[5] / 100)
-    if x and found == continent then return x, y end
-    return nil
+    if not x then return nil end
+    if found ~= continent then return nil, true end
+    return x, y
 end
 
 local function Build()
     hubs, edges = {}, {}
-    passCount.total, passCount.placed, builtAt = 0, 0, Now()
+    passCount.total, passCount.placed, passCount.waiting, passCount.misplaced = 0, 0, 0, 0
+    builtAt = Now()
     local data = ns.TravelData
     if type(data) ~= "table" then return end
     local mine = Faction()
@@ -221,6 +226,10 @@ local function Build()
         if x then
             passCount.placed = passCount.placed + 1
             add({ continent = continent, x = x, y = y, pass = true, zone = pass[1], zone2 = pass[2] })
+        elseif y then
+            passCount.misplaced = passCount.misplaced + 1
+        else
+            passCount.waiting = passCount.waiting + 1
         end
     end
 
@@ -240,21 +249,25 @@ end
 -- has changed.
 function Route.Reset()
     hubs, edges, origin = nil, nil, nil
-    passCount.tries = 0
+    passCount.tries, passWait = 0, PASS_RETRY
 end
 
--- Some passes could not be placed, and it is time to try again.
+-- The game could not place some passes yet, and it is time to try again.
+-- Each try waits twice as long as the one before: a map that never gets
+-- ready costs one rebuild every five minutes, no more.
 local function PassesDue()
-    if passCount.placed == passCount.total or passCount.tries >= PASS_TRIES then return false end
-    if Now() - builtAt < PASS_RETRY then return false end
+    if passCount.waiting == 0 or Now() - builtAt < passWait then return false end
     passCount.tries = passCount.tries + 1
+    passWait = math.min(passWait * 2, PASS_RETRY_MAX)
     return true
 end
 
 -- For the debug snapshot: how many passes the table has, how many the game
--- placed, and how many times placing the rest was tried again.
+-- placed, could not place yet or placed on the wrong continent, and how many
+-- times placing the rest was tried again.
 function Route.PassState()
-    return { total = passCount.total, placed = passCount.placed, tries = passCount.tries }
+    return { total = passCount.total, placed = passCount.placed, waiting = passCount.waiting,
+             misplaced = passCount.misplaced, tries = passCount.tries }
 end
 
 ---------------------------------------------------------------------------

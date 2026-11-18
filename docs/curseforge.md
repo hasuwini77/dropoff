@@ -26,13 +26,13 @@ Publishing is free. It needs a CurseForge author account, which is why the proje
    `## X-Curse-Project-ID: <id>`
 2. Create an API token at https://authors.curseforge.com/#/settings/api-tokens and store it as a repo secret:
    `gh secret set CF_API_TOKEN --repo hasuwini77/dropoff`
-3. Set the next version in the same file (`## Version: 0.5.0`) and add its entry to `CHANGELOG.md`. The version shown in game comes from the TOC, not from the tag.
+3. Set the next version in the same file (`## Version: x.y.z`) and add its entry to `CHANGELOG.md`. The version shown in game comes from the TOC, not from the tag.
 4. Commit, then tag and push:
-   `git tag v0.5.0 && git push origin v0.5.0`
+   `git tag vx.y.z && git push origin vx.y.z`
 
 The release workflow runs the tests, builds `DropOff-<tag>.zip`, attaches it to a GitHub release and uploads it to CurseForge. The packager reads `## Interface: 16001` and files the upload under WoW Forever.
 
-Tags up to `v0.4.1` were pushed before the workflows existed, so they have no zip. The first file on CurseForge is the next tag.
+Tags pushed before the workflows existed have no zip. The first file on CurseForge is the first tag pushed once the release workflow is on `main`.
 
 Before making the repository public: the tags `v0.3.1` and `v0.4.0` hold a `Passes.lua` whose positions came from Polestar's chokepoint list, which is under the GNU GPL version 3. From `v0.4.1` on the table is entered by hand and the addon is MIT throughout. The old table stays in the history of those two tags: they carry `LICENSES/Polestar.txt` for it. Publish no file built from them.
 

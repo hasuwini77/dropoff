@@ -3,10 +3,10 @@
 ## 0.4.1
 
 - The passes between zones are now entered by hand, as points of the zone maps that the game places when the routes are built. Nothing in the addon comes from Polestar any more, and `LICENSES/Polestar.txt` is gone.
-- They are approximate: one pass per road, bridge or tunnel, a few hundred yards off at worst.
+- They are approximate and not yet checked in game: one pass per road, bridge or tunnel.
 - Mulgore to Desolace goes through the plateau between them, at its airship mooring.
 - Thirteen links of the old table are no longer walked, because they are a swim along a coast, a climb, or a link I cannot vouch for: Durotar to Azshara, Mulgore to Stonetalon, Thousand Needles to Dustwallow, Dustwallow to Tanaris, Alterac to Silverpine, Arathi to the Hinterlands, Tirisfal to the Eastern Plaguelands, the Eastern Plaguelands to the Hinterlands, Dun Morogh to the Searing Gorge, Dun Morogh to the Wetlands, the Burning Steppes to Elwynn, Redridge to the Swamp of Sorrows, Stranglethorn to Westfall. If WoW Forever joins two of these on foot, tell me and the pass goes in.
-- A pass the game cannot place yet is left out and asked for again; the two zones stay apart meanwhile. `/dropoff debug` records how many passes were placed.
+- A pass the game cannot place yet is left out and asked for again; the two zones stay apart meanwhile. `/dropoff debug` records how many passes were placed, are still waiting, or landed on the wrong continent.
 
 ## 0.4.0
 

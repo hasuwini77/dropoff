@@ -1981,8 +1981,21 @@ test("a pass the game cannot place yet is left out, then placed", function()
     ns.Toggle()
     local target = ns.state.plan.ready[1].target
     check(target.legs == nil, "no way out of Ashenvale: no trip, and no straight line across the zones")
+    -- What the mock world can place: a pass in world yards, or on a zone map
+    -- it lays out over the real world. Its made-up maps are on a continent
+    -- of their own, the other zones have no map at all.
+    local onAshenvale, placeable, misplaced = 0, 0, 0
+    for _, pass in ipairs(ns.TravelPasses.passes) do
+        local map = pass[3] and MAPS[pass[3]]
+        if pass[3] == 1440 then onAshenvale = onAshenvale + 1 end
+        if not pass[3] or (map and not map.fake) then placeable = placeable + 1 end
+        if map and map.fake then misplaced = misplaced + 1 end
+    end
+    check(onAshenvale > 0 and misplaced > 0, "the table has passes of both kinds")
     local before = ns.Route.PassState()
-    check(before.placed < before.total, "some passes are not placed: " .. before.placed .. " of " .. before.total)
+    eq(before.placed, placeable - onAshenvale, "Ashenvale's passes are not placed")
+    eq(before.misplaced, misplaced, "the ones on another continent are counted apart")
+    eq(before.waiting, before.total - before.placed - before.misplaced, "the rest is waiting")
 
     world.unplaced[1440] = nil
     Advance(5)
@@ -1991,7 +2004,12 @@ test("a pass the game cannot place yet is left out, then placed", function()
     local legs = ns.state.plan.ready[1].target.legs
     check(legs ~= nil, "placed on a later try")
     eq(WalksStayInZone(ns, legs, 1440), 1443, "and the walk leaves Ashenvale through them")
-    eq(ns.Route.PassState().placed, before.placed + 4, "Ashenvale's four passes")
+    eq(ns.Route.PassState().placed, placeable, "Ashenvale's passes are placed now")
+    eq(ns.Route.PassState().tries, 1, "on the first try: 10 seconds after the build")
+    Advance(15)
+    eq(ns.Route.PassState().tries, 1, "the next try waits twice as long")
+    Advance(10)
+    eq(ns.Route.PassState().tries, 2, "then comes")
 
     -- The mock places Durotar, the Barrens and Elwynn on a continent of their
     -- own: a pass the game places on another continent than its zones is left out.
@@ -1999,8 +2017,9 @@ test("a pass the game cannot place yet is left out, then placed", function()
     eq(found, 9, "the bridge out of Durotar is placed, on the wrong continent")
     SlashCmdList.DROPOFF("debug")
     eq(DropOffDB.snapshot.passes.total, #ns.TravelPasses.passes, "the snapshot counts the passes")
-    eq(DropOffDB.snapshot.passes.placed, 11, "and the ones placed: those on the mock world's eight zone maps, and the one in world yards")
-    check(DropOffDB.snapshot.passes.tries >= 1, "and the tries")
+    eq(DropOffDB.snapshot.passes.placed, placeable, "the ones placed")
+    eq(DropOffDB.snapshot.passes.misplaced, misplaced, "the ones on the wrong continent")
+    check(DropOffDB.snapshot.passes.tries >= 2, "and the tries")
 end)
 
 test("the snapshot records the route", function()

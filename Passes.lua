@@ -18,10 +18,10 @@
 -- checked: walks to and from it are straight lines, as before.
 --
 -- Every pass was entered by hand, from where the road crosses on the zone
--- maps. They are approximate: a few hundred yards off at worst, which moves
--- the line on the map and the walking estimate, not the choice of zones.
--- Only links walked on a road, a bridge or through a tunnel are listed: no
--- swim along a coast, no climb.
+-- maps. They are approximate and not yet checked in game: a pass that is off
+-- moves the line on the map and the walking estimate, not the choice of
+-- zones. Only links walked on a road, a bridge or through a tunnel are
+-- listed: no swim along a coast, no climb.
 
 local _, ns = ...
 
@@ -76,8 +76,8 @@ ns.TravelPasses = {
         { 1439, 1440, 1439, 43.5, 93 },     -- the road south along the coast
         { 1440, 1448, 1440, 55.5, 29 },     -- the road north into Felwood
         { 1440, 1447, 1440, 93.5, 47.5 },   -- the road east into Azshara
-        { 1448, 1452, 1448, 65, 8 },        -- Timbermaw Hold
-        { 1448, 1450, 1448, 65, 8 },        -- Timbermaw Hold
+        { 1448, 1452, 1448, 65, 8 },        -- Timbermaw Hold: one tunnel out of Felwood,
+        { 1448, 1450, 1448, 65, 8 },        -- with an exit to Winterspring and one to Moonglade
         -- Eastern Kingdoms
         { 1420, 1421, 1421, 67, 5 },        -- the road south into Silverpine
         { 1420, 1422, 1422, 28, 57 },       -- the Bulwark
