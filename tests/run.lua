@@ -179,6 +179,7 @@ local function NewWorld()
         travel = false,     -- true: plan with the real travel data
         engine = nil,       -- a walking router another addon has loaded (Router below)
         combat = false,
+        unread = nil,       -- files of the TOC the game did not read: { ["Walk.lua"] = true }
         onTaxi = false,
         taxiNodes = nil,    -- what the open flight map lists: { { nodeID, state } }
         unplaced = {},      -- mapId -> true: the game cannot turn its points into world yards yet
@@ -206,6 +207,7 @@ local function InstallGlobals()
     UnitFactionGroup = function() return world.faction end
     InCombatLockdown = function() return world.combat or false end
     Polestar_NavEngine = world.engine
+    C_AddOns = { IsAddOnLoaded = function(name) return world.engine ~= nil and name:find("^Polestar") ~= nil end }
     UnitOnTaxi = function() return world.onTaxi end
     Enum = { FlightPathState = { Current = 0, Reachable = 1, Unreachable = 2 } }
     GetTaxiMapID = function() return 1415 end
@@ -483,7 +485,7 @@ local function Load(saved)
     local ns = {}
     for line in io.lines(ROOT .. "DropOff.toc") do
         local file = line:match("^([%w_]+%.lua)%s*$")
-        if file then
+        if file and not (world.unread and world.unread[file]) then
             local chunk = assert(loadfile(ROOT .. file))
             chunk("DropOff", ns)
         end
@@ -2291,10 +2293,12 @@ test("without a walking router a walk is a straight line and says so", function(
     local target = Target(ns)
     eq(Trip(target.legs), "walk>1412|1443 walk>goal", "to the pass, then to the hand-in")
     local labels = LabelTexts(ns)
-    check(HasText(labels, "1. Walk on into the next zone: Desolace · " .. math.floor(target.legs[1].yards + 0.5)
-        .. " yd as the crow flies"), "the walk to the pass is a straight line")
-    check(HasText(labels, "2. Go to Nataka Longhorn · " .. math.floor(target.legs[2].yards + 0.5)
-        .. " yd as the crow flies"), "and so is the one to the hand-in")
+    check(HasText(labels, "1. Walk on into the next zone: Desolace · " .. math.floor(target.legs[1].yards + 0.5) .. " yd"),
+        "the walk to the pass, in straight yards")
+    check(HasLabel(ns, "  Walking distances are as the crow flies."), "and a line of its own says so")
+    DropOffFrame.size:Click()
+    check(HasLabel(ns, "Walking distances are as the crow flies."), "in the small window too")
+    DropOffFrame.size:Click()
     eq(target.walk, nil, "no real yards")
     SlashCmdList.DROPOFF("debug")
     eq(DropOffDB.snapshot.walk.engine, false, "the snapshot says there is no router")
@@ -2308,9 +2312,14 @@ test("a plain walk says how far in a straight line, in both sizes", function()
     world.db.npcs[10].spawns = { [45] = { { nx * 100, ny * 100 } } }
     local ns = Load()
     ns.Toggle()
-    check(HasLabel(ns, "  Go to Karang Amakkar · 150 yd as the crow flies"), "one line under the hand-in")
+    check(HasLabel(ns, "  Go to Karang Amakkar · 150 yd"), "one line under the hand-in")
+    check(HasLabel(ns, "  Walking distances are as the crow flies."), "and that it is a straight line")
     DropOffFrame.size:Click()
-    check(HasLabel(ns, "Now: Go to Karang Amakkar · 150 yd as the crow flies"), "and in the small window")
+    check(HasLabel(ns, "Now: Go to Karang Amakkar · 150 yd"), "the same in the small window")
+    check(HasLabel(ns, "Walking distances are as the crow flies."), "with the straight line said")
+    for _, line in ipairs(ns.UI.Lines(ns.state.plan, true)) do
+        if line.kind == "label" then check(#line.text <= 45, "short enough not to be cut off: " .. line.text) end
+    end
 end)
 
 test("with a walking router the walk follows its path", function()
@@ -2497,6 +2506,7 @@ test("the snapshot records the router's answer", function()
     check(answer.waited >= 3, "how long it took: " .. answer.waited)
     eq(walk.maps[1].resident, true, "Kalimdor's maps were in memory")
     eq(walk.maps[0].resident, false, "the Eastern Kingdoms' were not")
+    eq(walk.addons.Polestar_Nav, true, "and which of the router's addons are loaded")
     eq(#router.asks, 1, "taking the snapshot asks for nothing")
     eq(router.cancels, 0, "and cancels nothing")
     check(ns.Walk.State().answers ~= walk.answers, "the snapshot holds a copy")
@@ -2572,6 +2582,21 @@ test("a broken router never breaks the trip", function()
     eq(ns.Walk.State().answers[1].reason, "empty", "and said so")
 end)
 
+test("after an update and a /reload the new file is not read: straight lines, no error", function()
+    local ns = PlateauScene(Router(), function() world.unread = { ["Walk.lua"] = true } end)
+    eq(ns.Walk, nil, "the game has not read Walk.lua")
+    Advance(5)
+    eq(Trip(Target(ns).legs), "walk>1412|1443 walk>goal", "the trip is the planner's")
+    check(HasLabel(ns, "  Walking distances are as the crow flies."), "in straight lines, said so")
+    eq(#LiveWaypoints(), 2, "the arrow and the hand-in's pin are there")
+    SlashCmdList.DROPOFF("debug")
+    eq(DropOffDB.snapshot.walk, nil, "the snapshot has no walk")
+    check(DropOffDB.snapshot.passes ~= nil, "and everything else")
+    ns.Toggle()
+    eq(#LiveWaypoints(), 0, "closing works")
+    check(not ChatHas("error"), "no error anywhere")
+end)
+
 test("the order of the list does not move when a real walk is longer", function()
     local router = Router()
     local ns = PlateauScene(router, function()
@@ -2593,7 +2618,7 @@ end)
 
 test("French: à vol d'oiseau", function()
     local ns = PlateauScene(nil, function() world.locale = "frFR" end)
-    check(HasText(LabelTexts(ns), "m à vol d'oiseau"), "a straight line says so in French")
+    check(HasLabel(ns, "  Distances à pied : à vol d'oiseau."), "a straight line says so in French")
 end)
 
 ---------------------------------------------------------------------------
