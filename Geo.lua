@@ -143,6 +143,8 @@ function Geo.BeginPass()
         local ok, x, y, instance = pcall(hbd.GetPlayerWorldPosition, hbd)
         if ok and Usable(x) and Usable(y) then
             player.hbd, player.x, player.y, player.instance = hbd, x, y, instance
+            -- HereBeDragons swaps the game's axes: its x runs west, its y north.
+            player.gx, player.gy = y, x
             return
         end
     end
@@ -153,9 +155,78 @@ function Geo.BeginPass()
             local continent, world = Try(C_Map.GetWorldPosFromMapPos, mapId, position)
             if type(world) == "table" and Usable(world.x) and Usable(world.y) then
                 player.x, player.y, player.instance = world.x, world.y, continent
+                player.gx, player.gy = world.x, world.y
             end
         end
     end
+end
+
+-- The player in the game's world yards (x north, y west) and the continent,
+-- as of the last pass. Nil when unknown.
+function Geo.PlayerWorld()
+    if not player.gx or type(player.instance) ~= "number" then return nil end
+    return player.gx, player.gy, player.instance
+end
+
+-- A map point (x, y in 0..1) in the game's world yards, plus its continent.
+function Geo.World(mapId, x, y)
+    local hbd = HBD()
+    if hbd then
+        local ok, wx, wy, instance = pcall(hbd.GetWorldCoordinatesFromZone, hbd, x, y, mapId)
+        if ok and Usable(wx) and Usable(wy) and type(instance) == "number" then return wy, wx, instance end
+    end
+    if C_Map and C_Map.GetWorldPosFromMapPos and type(CreateVector2D) == "function" then
+        local continent, world = Try(C_Map.GetWorldPosFromMapPos, mapId, CreateVector2D(x, y))
+        if type(world) == "table" and Usable(world.x) and Usable(world.y) and type(continent) == "number" then
+            return world.x, world.y, continent
+        end
+    end
+    return nil
+end
+
+local CONTINENT_MAP = { [0] = 1415, [1] = 1414 }  -- Eastern Kingdoms, Kalimdor
+
+local function Inside(value)
+    return Usable(value) and value >= 0 and value <= 1
+end
+
+-- World yards on a map: x, y in 0..1, or nil when the point is not on it.
+local function OnMap(continent, gx, gy, mapId)
+    local hbd = HBD()
+    if hbd and hbd.GetZoneCoordinatesFromWorld then
+        local ok, x, y = pcall(hbd.GetZoneCoordinatesFromWorld, hbd, gy, gx, mapId)
+        if ok and Inside(x) and Inside(y) then return x, y end
+    end
+    if C_Map and C_Map.GetMapPosFromWorldPos and type(CreateVector2D) == "function" then
+        local _, position = Try(C_Map.GetMapPosFromWorldPos, continent, CreateVector2D(gx, gy), mapId)
+        if type(position) == "table" and Inside(position.x) and Inside(position.y) then
+            return position.x, position.y
+        end
+    end
+    return nil
+end
+
+local places = {}
+
+-- The map to show a world point on: the zone under it when the game can name
+-- it, else the continent. Returns mapId, x, y (0..1), or nil. Travel hubs do
+-- not move, so answers are kept.
+function Geo.Place(continent, gx, gy)
+    local key = ("%d:%.0f:%.0f"):format(continent, gx, gy)
+    local known = places[key]
+    if known then return known[1], known[2], known[3] end
+
+    local mapId = CONTINENT_MAP[continent]
+    if not mapId then return nil end
+    local x, y = OnMap(continent, gx, gy, mapId)
+    if not x then return nil end
+    local info = C_Map and Try(C_Map.GetMapInfoAtPosition, mapId, x, y)
+    if type(info) == "table" and type(info.mapID) == "number" and info.mapID ~= mapId then
+        local zx, zy = OnMap(continent, gx, gy, info.mapID)
+        if zx then mapId, x, y = info.mapID, zx, zy end
+    end
+    places[key] = { mapId, x, y }
+    return mapId, x, y
 end
 
 -- For the debug snapshot: where the last pass thought the player was.

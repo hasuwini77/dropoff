@@ -1,6 +1,6 @@
 # DropOff
 
-Bags full of quest items? DropOff lists the quests you have already finished, tells you how many bag slots each one frees, and points you to the nearest hand-in first.
+Bags full of quest items? DropOff lists the quests you have already finished, tells you how many bag slots each one frees, and takes you to the quickest hand-in first: which flight to take, which zeppelin or boat, then the walk.
 
 Built for **WoW Forever** (interface 16001). English and French.
 
@@ -8,8 +8,10 @@ Built for **WoW Forever** (interface 16001). English and French.
 
 - Scans your bags and your quest log.
 - Finds the finished quests, including deliveries that are ready the moment you accept them.
-- Sorts them: quests holding bag items first, nearest hand-in first.
-- Points the way to the first one. Hand it in and the arrow moves to the next.
+- Sorts them: quests holding bag items first, quickest to reach first.
+- Plans the trip to the first one and lists it step by step: go to the flight master, fly, take the zeppelin or the boat, walk to the hand-in. Each trip comes with a time estimate.
+- Points the arrow at the next stop of the trip, and draws the trip as a dotted line on the world map and the minimap.
+- Hand the quest in and everything moves to the next one.
 - Also lists, without guidance for now:
   - quests in progress that hold items,
   - quest items tied to no quest in your log (leftovers, or items that start a quest).
@@ -21,6 +23,13 @@ Built for **WoW Forever** (interface 16001). English and French.
 |---|---|
 | [Questie](https://www.curseforge.com/wow/addons/questie) | Where each quest is handed in. Without it you still get the list and the slot counts, but no directions. |
 | [TomTom](https://www.curseforge.com/wow/addons/tomtom) (optional) | The arrow. Without it DropOff places the game's own map pin. |
+| [OpenMap](https://github.com/openmap-world/openmap) (optional) | Nothing. If you use it, the map button moves its view onto the hand-in. |
+
+## How the trip is planned
+
+The trip is an estimate. DropOff knows where every flight master and every boat, zeppelin and airship dock is, and how long each flight path is. It picks the fastest chain of those, with straight-line walks in between. It does not follow roads, and it cannot see a mountain in the way.
+
+It learns which flight paths your character knows the first time you open a flight map on each continent. Before that it takes them all as known and says so under the steps.
 
 ## Commands
 
@@ -40,17 +49,18 @@ The snapshot holds your quest log, the quest items in your bags and where DropOf
 
 ## En français
 
-DropOff liste les quêtes déjà terminées, indique combien d'emplacements de sac chacune libère, et te guide vers le PNJ le plus proche d'abord. Tape `/dropoff` pour ouvrir la fenêtre : tant qu'elle est ouverte, la flèche pointe vers la prochaine quête à rendre. Questie donne les lieux, TomTom affiche la flèche (sinon c'est le repère de carte du jeu).
+DropOff liste les quêtes déjà terminées, indique combien d'emplacements de sac chacune libère, et te guide vers la plus rapide à rendre d'abord. Sous la quête en cours, il affiche tout le trajet, étape par étape : rejoindre le maître de vol, prendre le vol, le zeppelin ou le bateau, puis finir à pied, avec une durée estimée. Le trajet est aussi tracé en pointillés sur la carte du monde et la minicarte. Tape `/dropoff` pour ouvrir la fenêtre : tant qu'elle est ouverte, la flèche pointe vers la prochaine étape. Questie donne les lieux, TomTom affiche la flèche (sinon c'est le repère de carte du jeu).
 
 ## Development
 
 ```sh
 luajit tests/run.lua     # offline tests against a mocked WoW API
 ./tools/install.sh       # copy the addon into _forever_/Interface/AddOns
+tools/build_travel_data.py <OpenMap folder>   # regenerate TravelData.lua
 ```
 
 DropOff reads Questie's data through the public `LibQuestieDB` API at run time and embeds no library. Pushing a `v*` tag builds the zip with the BigWigs packager.
 
 ## License
 
-MIT
+MIT. `TravelData.lua` is generated from the data tables of [OpenMap](https://github.com/openmap-world/openmap), also MIT: see `LICENSES/OpenMap.txt`.

@@ -1,8 +1,8 @@
 local _, ns = ...
-local Data, Geo = ns.Data, ns.Geo
+local Data, Geo, Route = ns.Data, ns.Geo, ns.Route
 
 -- Builds the list the window shows: finished quests to hand in (holding bag
--- items first, nearest first), quests in progress that hold items, and quest
+-- items first, quickest to reach first), quests in progress that hold items, and quest
 -- items tied to nothing in the log.
 local Plan = {}
 ns.Plan = Plan
@@ -11,9 +11,18 @@ ns.Plan = Plan
 local function Better(a, b)
     if not b then return true end
     if a.friendly ~= b.friendly then return a.friendly end
+    -- Travel time knows about flights and boats; yards do not.
+    if a.eta and b.eta then return a.eta < b.eta end
+    if a.eta or b.eta then return a.eta ~= nil end
     if a.dist and b.dist then return a.dist < b.dist end
     if a.dist or b.dist then return a.dist ~= nil end
     return b.far and not a.far
+end
+
+-- The trip to a place: seconds and legs, when the travel network reaches it.
+local function Trip(place)
+    local gx, gy, continent = Geo.World(place.mapId, place.x, place.y)
+    if gx then place.eta, place.legs = Route.To(gx, gy, continent) end
 end
 
 local function ResolveTarget(quest)
@@ -26,6 +35,7 @@ local function ResolveTarget(quest)
                 local place = Geo.NearestSpawn(spawns)
                 if place then
                     place.name, place.friendly, place.kind = name, friendly, finisher.kind
+                    Trip(place)
                     if Better(place, best) then best = place end
                 end
             end
@@ -37,6 +47,7 @@ local function ResolveTarget(quest)
             local dist, far = Geo.Distance(mapId, x, y)
             best = { mapId = mapId, x = x, y = y, dist = dist, far = far or false,
                      dungeon = false, friendly = true, native = true }
+            Trip(best)
         end
     end
     if best then best.zone = Geo.MapName(best.mapId) end
@@ -46,11 +57,20 @@ end
 local function ByRoute(a, b)
     local aItems, bItems = a.slots > 0, b.slots > 0
     if aItems ~= bItems then return aItems end
-    local ad, bd = a.target and a.target.dist, b.target and b.target.dist
-    if ad and bd then
-        if ad ~= bd then return ad < bd end
-    elseif ad or bd then
-        return ad ~= nil
+    -- By travel time first: every quest with one comes before those without,
+    -- which fall back to yards. One rule per pair keeps the order consistent.
+    local ae, be = a.target and a.target.eta, b.target and b.target.eta
+    if ae and be then
+        if ae ~= be then return ae < be end
+    elseif ae or be then
+        return ae ~= nil
+    else
+        local ad, bd = a.target and a.target.dist, b.target and b.target.dist
+        if ad and bd then
+            if ad ~= bd then return ad < bd end
+        elseif ad or bd then
+            return ad ~= nil
+        end
     end
     local aPlace, bPlace = a.target ~= nil, b.target ~= nil
     if aPlace ~= bPlace then return aPlace end
@@ -81,6 +101,7 @@ function Plan.Build()
     local quests, hidden = Data.ReadQuestLog()
     local tied = {}
     Geo.BeginPass()
+    Route.Begin(Geo.PlayerWorld())
 
     -- 1. Items the database ties to each quest.
     for _, quest in ipairs(quests) do

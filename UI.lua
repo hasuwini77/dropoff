@@ -24,6 +24,9 @@ local GOLD = { 1, 0.82, 0 }
 local WHITE = { 1, 1, 1 }
 local GREY = { 0.6, 0.6, 0.6 }
 local GREEN = { 0.35, 0.9, 0.45 }
+local SOFT = { 0.82, 0.82, 0.82 }
+local DISABLED = { 0.5, 0.5, 0.5 }
+local MAX_STEPS = 8                      -- route steps listed under the current quest
 
 local frame
 local rows, labels = {}, {}
@@ -220,7 +223,11 @@ end
 
 local function DistanceLabel(target)
     if not target then return "" end
-    if target.dist then return L.DIST_YARDS:format(math.floor(target.dist + 0.5)) end
+    -- A trip with a flight or a crossing is told in minutes, like the order
+    -- of the list; a plain walk in yards.
+    local trip = target.eta and target.legs and #target.legs > 1
+    if target.dist and not trip then return L.DIST_YARDS:format(math.floor(target.dist + 0.5)) end
+    if target.eta then return L.ETA:format(math.max(1, math.floor(target.eta / 60 + 0.5))) end
     return target.far and L.DIST_FAR or ""
 end
 
@@ -233,7 +240,26 @@ end
 function UI.Lines(plan)
     local lines = {}
     local function header(text) lines[#lines + 1] = { kind = "label", text = text, height = HEADER_HEIGHT } end
-    local function note(text) lines[#lines + 1] = { kind = "label", text = text, height = NOTE_HEIGHT } end
+    local function note(text, colour)
+        lines[#lines + 1] = { kind = "label", text = text, height = NOTE_HEIGHT, colour = colour }
+    end
+
+    -- The trip to the current quest, one line per leg, when it is more than a walk.
+    local function route(quest)
+        local target = quest.target
+        local legs = target and target.legs
+        if not legs or #legs < 2 then return end
+        note(L.ROUTE:format(ns.Route.TimeText(target.eta)), WHITE)
+        -- On a flight or a crossing, the legs before it are behind the player.
+        local first = ns.Route.FirstLeg(legs, plan.carried) or 1
+        local assumed = false
+        for index = first, math.min(#legs, first + MAX_STEPS - 1) do
+            local text = ns.Route.StepText(legs, index, target.name)
+            note("  " .. L.STEP:format(index - first + 1, text), index == first and GOLD or SOFT)
+            assumed = assumed or legs[index].assumed
+        end
+        if assumed then note("  " .. L.ROUTE_ASSUMED) end
+    end
 
     if (plan.hidden or 0) > 0 then note(L.HIDDEN_QUESTS:format(plan.hidden)) end
 
@@ -260,6 +286,7 @@ function UI.Lines(plan)
                 items = quest.items,
                 hint = quest.target and (pinned and L.TIP_PINNED or L.TIP_CLICK) or nil,
             }
+            if plan.current == quest.id then route(quest) end
         end
         if #list > limit then note(L.MORE:format(#list - limit)) end
     end
@@ -351,6 +378,7 @@ function UI.Render(plan)
             label:ClearAllPoints()
             label:SetPoint("BOTTOMLEFT", frame, "TOPLEFT", PAD, y - line.height + 4)
             label:SetText(line.text)
+            Colour(label, line.colour or DISABLED)
             label:Show()
         end
         y = y - line.height

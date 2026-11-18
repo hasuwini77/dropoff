@@ -1,9 +1,9 @@
 ## Interface: 16001
 ## Title: DropOff
-## Notes: Guides you to turn in finished quests, nearest first, to free bag space.
-## Notes-frFR: Te guide pour rendre tes quêtes terminées, les plus proches d'abord, et libérer tes sacs.
+## Notes: Guides you to turn in finished quests, quickest first, with the whole trip: flights, zeppelins, boats.
+## Notes-frFR: Te guide pour rendre tes quêtes terminées, les plus rapides d'abord, avec tout le trajet : vols, zeppelins, bateaux.
 ## Author: Edwin (Team Baguette)
-## Version: 0.2.2
+## Version: 0.3.0
 ## IconTexture: Interface\Icons\INV_Misc_Bag_08
 ## Category: Quests
 ## Category-frFR: Quêtes
@@ -18,6 +18,9 @@ Locales.lua
 Core.lua
 Data.lua
 Geo.lua
+TravelData.lua
+Route.lua
 Plan.lua
 Nav.lua
+Trail.lua
 UI.lua

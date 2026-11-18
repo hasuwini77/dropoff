@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.0
+
+- The whole trip to a hand-in: flight paths, zeppelins, boats, then the walk. The steps are listed under the current quest with a time estimate.
+- The arrow points at the next stop of the trip (a flight master, a dock), then at the hand-in.
+- The trip is drawn as a dotted line on the world map and the minimap.
+- Finished quests are sorted by travel time. A hand-in on another continent shows minutes instead of "far".
+- DropOff learns your flight paths when you open a flight map. Until then it takes them as known and says so.
+- Flight master and dock positions come from OpenMap's data tables (MIT).
+
 ## 0.2.2
 
 - With the OpenMap addon, the map button now moves the map onto the hand-in. Before, a hand-in near the edge of a zone could be outside the part of the map on screen.

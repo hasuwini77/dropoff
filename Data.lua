@@ -366,6 +366,7 @@ function Data.DebugDump()
             entry.target = {
                 name = t.name, mapId = t.mapId, x = t.x, y = t.y, dist = t.dist, zone = t.zone,
                 areaId = t.areaId, dungeon = t.dungeon, friendly = t.friendly, native = t.native,
+                eta = t.eta, legs = t.legs,
             }
         end
         dump.quests[#dump.quests + 1] = entry
@@ -376,6 +377,14 @@ function Data.DebugDump()
     local live = ns.IsOpen() and ns.state.plan or nil
     dump.current = live and live.current or nil
     dump.player = ns.Geo.PlayerDebug()
+    dump.trail = ns.Trail.State()
+    dump.flights = {
+        known = type(DropOffCharDB) == "table" and DropOffCharDB.flights or nil,
+        seen = type(DropOffCharDB) == "table" and DropOffCharDB.flightsSeen or nil,
+        nodesForMap = Has(rawget(_G, "C_TaxiMap"), "GetTaxiNodesForMap"),
+        allTaxiNodes = Has(rawget(_G, "C_TaxiMap"), "GetAllTaxiNodes"),
+        openMap = type(rawget(_G, "OpenMapAPI")) == "table" and OpenMapAPI.version or nil,
+    }
 
     local bags = Data.ScanBags()
     for itemID, item in pairs(bags) do
