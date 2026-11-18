@@ -1950,6 +1950,13 @@ test("a line that fails once the trip is drawn gives way to dots", function()
     local pins = Count(world.mapPins)
     Advance(4)
     eq(Count(world.mapPins), pins, "once: not laid again at every refresh")
+    -- Further along the same trip, the line is not tried a second time.
+    local asked = 0
+    function canvas:GetWidth() asked = asked + 1; error("canvas gone") end
+    world.player.x, world.player.y = OnMap(1417, HAMMERFALL[1] - 100, HAMMERFALL[2])
+    Advance(4)
+    eq(asked, 0, "a hundred yards on, the failed line is left alone")
+    check(Count(world.mapPins) > 20, "and the dots are still there")
     ns.Toggle()
     eq(Count(world.mapPins), 0, "closing takes them all off")
     WorldMapFrame = nil

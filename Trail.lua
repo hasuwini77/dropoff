@@ -34,8 +34,8 @@ local COLOUR = {
 
 local drawn             -- signature of what is on the maps now
 local dotted            -- that trip has no line: it is laid as dots
-local laying            -- signature of the trip being laid, or laid last
-local failed            -- signature of the trip whose line could not be drawn
+local laying            -- where the trip being laid, or laid last, ends
+local failed            -- where the trip whose line could not be drawn ends
 local stale             -- the line failed after the trip was laid: lay it again, as dots
 local pools = { world = {}, minimap = {} }
 local used = { world = 0, minimap = 0 }
@@ -291,6 +291,13 @@ function Trail.Clear()
     end
 end
 
+-- Where the trip ends: what a failed line is remembered by, however far
+-- the player has walked since.
+local function Goal(legs)
+    local to = legs[#legs].to
+    return ("%d:%d:%d"):format(to.continent, math.floor(to.x), math.floor(to.y))
+end
+
 -- What the drawing depends on: the legs, and roughly where the player is.
 local function Signature(legs)
     local parts = {}
@@ -337,8 +344,8 @@ function Trail.Show(legs)
     -- The line: one stretch per leg that stays on one continent, and one
     -- from each turn to the next along a real path. A trip whose line failed
     -- is not tried again: it keeps its dots.
-    wanted, laying = {}, signature
-    if signature ~= failed then lineState.error, failed = nil, nil end
+    wanted, laying = {}, Goal(legs)
+    if laying ~= failed then lineState.error, failed = nil, nil end
     for _, leg in ipairs(legs) do
         if leg.from.continent == leg.to.continent then
             local points = Through(leg)
