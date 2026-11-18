@@ -1,5 +1,11 @@
 package-as: DropOff
 
+# The walking maps are addons of their own, beside DropOff.
+move-folders:
+  DropOff/DropOff_Paths_EasternKingdoms: DropOff_Paths_EasternKingdoms
+  DropOff/DropOff_Paths_Kalimdor: DropOff_Paths_Kalimdor
+  DropOff/DropOff_Paths_Zephras: DropOff_Paths_Zephras
+
 ignore:
   - tests
   - tools

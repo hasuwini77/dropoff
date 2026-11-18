@@ -16,7 +16,7 @@ Publishing is free. It needs a CurseForge author account, which is why the proje
 3. Summary: paste the English summary below.
 4. Description: paste the English description, then the French one under it.
 5. Categories: Quests & Leveling as the main one, Bags & Inventory as the second.
-6. License: MIT.
+6. License: GNU General Public License version 3 (GPLv3). From 0.7.0 on DropOff embeds GPL code and data (`LICENSES/ShortestPathForever.txt`).
 7. Source: `https://github.com/hasuwini77/dropoff`. Issues: `https://github.com/hasuwini77/dropoff/issues`.
 8. Upload the logo and submit. CurseForge reviews new projects before they show up in search.
 
@@ -34,7 +34,12 @@ The release workflow runs the tests, builds `DropOff-<tag>.zip`, attaches it to 
 
 Tags pushed before the workflows existed have no zip. The first file on CurseForge is the first tag pushed once the release workflow is on `main`.
 
-Before making the repository public: the tags `v0.3.1` and `v0.4.0` hold a `Passes.lua` whose positions came from Polestar's chokepoint list, which is under the GNU GPL version 3. From `v0.4.1` on the table is entered by hand and the addon is MIT throughout. The old table stays in the history of those two tags: they carry `LICENSES/Polestar.txt` for it. Publish no file built from them.
+The zip holds four folders: `DropOff` and the three map addons (`move-folders` in `.pkgmeta`), about 23 MB of maps. Check the first zip the packager builds: each `DropOff_Paths_*` folder must sit beside `DropOff`, not inside it.
+
+Before making the repository public:
+
+- The tags `v0.3.1` and `v0.4.0` hold a `Passes.lua` whose positions came from Polestar's chokepoint list, which is under the GNU GPL version 3. From `v0.4.1` to `v0.6.0` the table is entered by hand and the addon is MIT. The old table stays in the history of those two tags: they carry `LICENSES/Polestar.txt` for it. Publish no file built from them.
+- From `v0.7.0` on the addon is GPL-3.0-or-later: it embeds the walking router and maps of Shortest Path Forever (Cillian Berragan). The licence allows it, with the credit that is in `LICENSES/ShortestPathForever.txt` and on top of each file. Telling its author before publishing is a courtesy, not a condition.
 
 ## Summary (English)
 
@@ -58,7 +63,7 @@ It reads your bags and your quest log, finds the quests you have already finishe
 What you get
 
 - A list of finished quests, with the slots each one frees and the distance or travel time to the hand-in.
-- The trip to the current quest as numbered steps, with flights, zeppelins and boats, and a time estimate. It is an estimate: a walk is a straight line inside a zone, and the window says so ("as the crow flies"), and it changes zone only where the zones join. With Polestar and its walking maps enabled, the walk of the current trip follows the real path instead.
+- The trip to the current quest as numbered steps, with flights, zeppelins and boats, and a time estimate. The walk of the current trip follows the real path: along the roads, round the mountains, down a lift when that is the way. Until that path is found it is a straight line, and the window says so ("as the crow flies").
 - An arrow to the next stop of the trip. It uses TomTom if you have it and the game's own map pin if you don't.
 - The trip drawn as a line on the world map and as dots on the minimap.
 - Click a quest to go there first. Click it again to go back to quickest first.
@@ -70,7 +75,7 @@ Requirements
 
 - Questie, for the hand-in locations. Without it you still get the list and the slot counts, but no directions.
 - TomTom is optional.
-- Polestar is optional: with it, walks follow the roads and go round the mountains.
+- Nothing else for the walking paths: the maps come with DropOff, as three folders of their own. Leave them enabled.
 - DropOff learns your flight paths when you open a flight map. Until then it takes them as known.
 
 Commands
@@ -95,7 +100,7 @@ L'addon lit tes sacs et ton journal de quêtes, repère les quêtes déjà termi
 Ce que tu as
 
 - La liste des quêtes terminées, avec les emplacements libérés et la distance ou le temps de trajet jusqu'au PNJ.
-- Le trajet vers la quête en cours en étapes numérotées, avec les vols, les zeppelins et les bateaux, et une durée estimée. C'est une estimation : un trajet à pied est une ligne droite dans une zone, la fenêtre le dit (« à vol d'oiseau »), et il change de zone uniquement là où les zones se rejoignent. Avec Polestar et ses cartes de marche activés, le trajet à pied en cours suit le vrai chemin.
+- Le trajet vers la quête en cours en étapes numérotées, avec les vols, les zeppelins et les bateaux, et une durée estimée. Le trajet à pied en cours suit le vrai chemin : par les routes, en contournant les montagnes, par l'ascenseur quand il le faut. Tant que ce chemin n'est pas calculé, c'est une ligne droite, et la fenêtre le dit (« à vol d'oiseau »).
 - Une flèche vers la prochaine étape. Elle passe par TomTom si tu l'as, sinon par le repère de carte du jeu.
 - Le trajet tracé d'un trait sur la carte du monde et en pointillés sur la minicarte.
 - Clique sur une quête pour y aller en premier. Clique à nouveau pour revenir à la plus rapide d'abord.
@@ -107,7 +112,7 @@ Prérequis
 
 - Questie, pour savoir où rendre chaque quête. Sans lui tu gardes la liste et le nombre d'emplacements, mais pas le chemin.
 - TomTom est facultatif.
-- Polestar est facultatif : avec lui, les trajets à pied suivent les routes et contournent les montagnes.
+- Rien d'autre pour les chemins à pied : les cartes sont fournies avec DropOff, dans trois dossiers à part. Laisse-les activés.
 - DropOff apprend tes trajets de vol quand tu ouvres une carte de vol. En attendant, il les considère comme connus.
 
 Commandes

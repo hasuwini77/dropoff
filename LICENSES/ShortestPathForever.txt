@@ -1,0 +1,37 @@
+Shortest Path Forever
+https://github.com/cjber/shortest-path-forever
+By Cillian Berragan (cjber). GNU General Public License, version 3 or later:
+the text is in the LICENSE file of this addon.
+
+DropOff's walking router, its walking maps and the heights it gives a hand-in
+are Shortest Path Forever's. Taken from release v1.43.2, commit
+834cc7c3be85f862bf0ef5db7410c57c439f36d1, on 2026-11-18:
+
+  Routing/PathGrid.lua, Path.lua, PathJobs.lua   Router/                         the router
+  Data/Heights.lua                               Router/Heights.lua              spawns over or under another floor
+  Nav/Nav0*.lua                                  DropOff_Paths_EasternKingdoms/  walking maps
+  Nav/Nav1*.lua                                  DropOff_Paths_Kalimdor/
+  Nav/Nav2991*.lua                               DropOff_Paths_Zephras/
+
+What was changed in those files: a four-line notice on top of each, and the
+global the maps are kept in, ShortestPathForeverPathData, is named
+DropOffPathData, so that both addons can be installed side by side. Nothing
+else. tools/vendor-router.sh rebuilds them from a checkout and compares each
+one with upstream byte for byte.
+
+Written for DropOff from its files:
+
+  Lifts.lua   the two ends of each lift, from the docks 1001 to 1014 of its
+              Data/Transports.lua
+  Walk.lua    the lookup of a hand-in's height follows its ns.SpawnHeight
+              (Journey/JourneyInput.lua); the height of the Undercity's floor
+              is the one given there
+
+Where its data comes from, as its THIRD_PARTY.md says:
+
+  Walking maps      The game client's terrain, baked with TrinityCore's tools
+                    (GPL-2.0-or-later). Derived data, GPL-3.0-or-later;
+                    Blizzard's EULA applies to the client files.
+  Heights, lifts    CMaNGOS classic-db (GPL-3.0), and the WoW: Forever client
+                    tables read through wago.tools (Blizzard Entertainment's
+                    game data).
