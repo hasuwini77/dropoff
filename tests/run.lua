@@ -115,8 +115,11 @@ local MAPS = {
     [1414] = { name = "Kalimdor", ox = 20000, oy = 15000, size = -40000, instance = 1, continent = true },
     [1417] = { name = "Arathi Highlands", ox = -800, oy = 0, size = -3600, instance = 0, real = true },
     [1440] = { name = "Ashenvale", ox = 1800, oy = 4700, size = -5800, instance = 1, real = true },
+    [1412] = { name = "Mulgore", ox = 2048, oy = -273, size = -5140, instance = 1, real = true },
+    [1442] = { name = "Stonetalon Mountains", ox = 3246, oy = 2917, size = -4883, instance = 1, real = true },
+    [1443] = { name = "Desolace", ox = 4233, oy = 452, size = -4500, instance = 1, real = true },
 }
-local AREA_TO_MAP = { [14] = 1411, [17] = 1413, [12] = 1429, [45] = 1417, [331] = 1440 }
+local AREA_TO_MAP = { [14] = 1411, [17] = 1413, [12] = 1429, [45] = 1417, [331] = 1440, [405] = 1443 }
 
 -- Map coordinates (0..1) of a point given in the game's world yards.
 local function OnMap(mapId, gx, gy)
@@ -452,6 +455,7 @@ local function Load()
     -- Most tests are about the list, not about travel: no flights or boats.
     if not world.travel then
         ns.TravelData = { nodes = {}, flights = {}, transports = {} }
+        ns.TravelPasses = nil
         ns.Route.Reset()
     end
     ns.eventFrame.scripts.OnEvent(ns.eventFrame, "ADDON_LOADED", "DropOff")
@@ -1520,6 +1524,142 @@ test("route planner on a small network", function()
     seconds, legs = ns.Route.To(30, 40, 7)
     eq(Kinds(legs), "walk", "but a walk on the spot works")
     eq(math.floor(legs[1].yards), 50, "by the straight line")
+end)
+
+-- Zoram'gar Outpost and Ghost Walker Post: the trip that showed the problem.
+local ZORAMGAR, GHOST_WALKER = { 3374.7, 997 }, { -1335, 1707 }
+-- The flight masters that character knew: no Shadowprey Village (38).
+local KNOWN = { 61, 25, 58, 29, 56, 30, 22, 17, 77, 10, 20, 11, 80, 23, 13 }
+
+-- A Horde character at Zoram'gar with a quest to hand in at Ghost Walker
+-- Post in Desolace, knowing the flight masters in `known`.
+local function DesolaceScene(known)
+    TravelScene()
+    local x, y = OnMap(1440, ZORAMGAR[1], ZORAMGAR[2])
+    world.player = { map = 1440, x = x, y = y }
+    local nx, ny = OnMap(1443, GHOST_WALKER[1], GHOST_WALKER[2])
+    world.db.npcs[10] = { name = "Nataka Longhorn", spawns = { [405] = { { nx * 100, ny * 100 } } }, friendlyToFaction = "H" }
+    local ns = Load()
+    DropOffCharDB.flights, DropOffCharDB.flightsSeen = {}, { [0] = true, [1] = true }
+    for _, id in ipairs(known) do DropOffCharDB.flights[id] = true end
+    ns.Route.Reset()
+    ns.Toggle()
+    return ns, ns.state.plan.ready[1].target.legs
+end
+
+-- "fly>29 walk>1442|1443 walk>goal": each leg and where it ends.
+local function Trip(legs)
+    local out = {}
+    for _, leg in ipairs(legs) do
+        local to = leg.to
+        out[#out + 1] = leg.kind .. ">" .. (to.node or to.pass and (to.zone .. "|" .. to.zone2)
+            or to.dock and "dock" or "goal")
+    end
+    return table.concat(out, " ")
+end
+
+-- No walk may leave a zone except at a pass between the two.
+local function WalksStayInZone(ns, legs, fromZone)
+    local zone = fromZone
+    for _, leg in ipairs(legs) do
+        if leg.kind == "walk" then
+            local to = leg.to
+            if to.pass then
+                check(to.zone == zone or to.zone2 == zone, "the pass is one out of zone " .. tostring(zone))
+                zone = leg.enter
+            elseif to.zone then
+                eq(to.zone, zone, "a walk to a flight master or a dock stays in the zone")
+            end
+        else
+            zone = leg.to.zone
+        end
+    end
+    return zone
+end
+
+test("a walk changes zone only where the zones join", function()
+    local ns, legs = DesolaceScene(KNOWN)
+    local trip = Trip(legs)
+    eq(trip, "fly>22 walk>1412|1443 walk>goal", "Thunder Bluff, the pass into Desolace, the hand-in")
+    eq(WalksStayInZone(ns, legs, 1440), 1443, "the trip ends in Desolace")
+    check(legs[#legs].final, "the last leg is the walk to the hand-in")
+    eq(legs[2].enter, 1443, "the pass leads into Desolace")
+
+    local labels = LabelTexts(ns)
+    check(HasText(labels, "1. Fly to Thunder Bluff"), "step 1: the flight")
+    check(HasText(labels, "2. Walk on into the next zone: Desolace"), "step 2: the pass, by the zone's name")
+    check(HasText(labels, "3. Go to Nataka Longhorn"), "step 3: the hand-in")
+end)
+
+test("the trip follows the flight masters the character knows", function()
+    local known = {}
+    for _, id in ipairs(KNOWN) do
+        if id ~= 22 then known[#known + 1] = id end
+    end
+    local ns, legs = DesolaceScene(known)
+    eq(Trip(legs), "fly>29 walk>1442|1443 walk>goal", "no Thunder Bluff: Sun Rock Retreat and its pass")
+    eq(WalksStayInZone(ns, legs, 1440), 1443, "into Desolace through Stonetalon")
+
+    known[#known + 1] = 38
+    ns, legs = DesolaceScene(known)
+    eq(Trip(legs), "fly>38 walk>goal", "Shadowprey Village known: a flight into Desolace, then on foot")
+end)
+
+test("with no flight at all the walk goes from pass to pass", function()
+    local ns, legs = DesolaceScene({})
+    local trip = Trip(legs)
+    check(not trip:find("fly", 1, true), "no flight: " .. trip)
+    eq(WalksStayInZone(ns, legs, 1440), 1443, "every zone is left through a pass, down to Desolace")
+    check(#legs >= 3, "several stretches: " .. trip)
+    check(legs[#legs].final, "ending at the hand-in")
+end)
+
+test("standing at a pass, the walk to it is not a step", function()
+    local ns = DesolaceScene(KNOWN)
+    check(ns.Route.Begin(450, 1790, 1, 1442), "just north of the pass into Desolace")
+    local _, legs = ns.Route.To(GHOST_WALKER[1], GHOST_WALKER[2], 1, 1443)
+    eq(Trip(legs), "walk>goal", "one walk, from where the player is")
+    check(legs[1].final, "to the hand-in")
+end)
+
+test("a zone the pass table does not know is not checked", function()
+    local ns = DesolaceScene(KNOWN)
+    check(ns.Route.Begin(-1197, 30, 1, 1456), "in Thunder Bluff")
+    local _, legs = ns.Route.To(GHOST_WALKER[1], GHOST_WALKER[2], 1, 1443)
+    eq(Trip(legs), "walk>1412|1443 walk>goal", "a city is its zone: out of Mulgore through its pass")
+    _, legs = ns.Route.To(GHOST_WALKER[1], GHOST_WALKER[2], 1, 99999)
+    eq(Trip(legs), "walk>goal", "a hand-in on an unknown map: the straight line, as before")
+    check(ns.Route.Begin(-1197, 30, 1, nil), "player's zone unknown")
+    _, legs = ns.Route.To(GHOST_WALKER[1], GHOST_WALKER[2], 1, 1443)
+    eq(Trip(legs), "walk>goal", "the straight line too")
+end)
+
+test("an island zone is reached by boat only", function()
+    local ns = DesolaceScene(KNOWN)
+    check(ns.Route.Begin(6341, 557, 1, 1439), "a Horde character in Auberdine")
+    check(ns.Route.To(9900, 900, 1, 1438) == nil, "no way to Teldrassil without the Alliance's boat")
+end)
+
+test("every flight master and pass of the data has a place in the zone table", function()
+    world = NewWorld()
+    world.travel = true
+    local ns = Load()
+    local passes = ns.TravelPasses
+    for id, node in pairs(ns.TravelData.nodes) do
+        local zone = passes.names[node[1]:match(",%s*(.+)$") or node[1]]
+        local name = node[1]
+        if not (name:find("Riverglades", 1, true) or name:find("Mount Hyjal", 1, true)) then
+            check(zone ~= nil, "zone of flight master " .. id .. " (" .. name .. ")")
+            if zone then eq(passes.zones[zone], node[2], "continent of " .. name) end
+        end
+    end
+    for index, pass in ipairs(passes.passes) do
+        check(passes.zones[pass[1]] ~= nil and passes.zones[pass[1]] == passes.zones[pass[2]],
+            "pass " .. index .. " joins two zones of one continent")
+    end
+    for city, zone in pairs(passes.cities) do
+        check(passes.zones[zone] ~= nil and passes.zones[city] == nil, "city " .. city .. " stands in a zone")
+    end
 end)
 
 test("the snapshot records the route", function()
