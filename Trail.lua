@@ -1,14 +1,14 @@
 local _, ns = ...
 
--- Draws the route: a line on the world map, dots on the minimap, and a marker
--- at each change of transport and at the hand-in. The dots and markers use
--- the pin library that Questie and TomTom load (HereBeDragons-Pins), never
--- embedded here. The line is drawn on the world map's canvas itself: on
--- OpenMap's stitched map through its API, on Blizzard's own through the
--- coordinates of the map it shows. The world map keeps its dots under the
--- line, so the trip still shows where the line cannot be drawn. A walk with a
--- real path (Walk.lua) is drawn along it, turn by turn; any other stretch is
--- a straight line between its two ends.
+-- Draws the route: a line on the world map, and a marker at each change of
+-- transport and at the hand-in. The line is drawn on the world map's canvas
+-- itself: on OpenMap's stitched map through its API, on Blizzard's own
+-- through the coordinates of the map it shows. A walk with a real path
+-- (Walk.lua) is drawn along it, turn by turn; any other stretch is a straight
+-- line between its two ends. The markers use the pin library that Questie
+-- and TomTom load (HereBeDragons-Pins), never embedded here. Only a trip
+-- whose line cannot be drawn is laid as dots on the world map instead. The
+-- minimap has the marker of the next stop, and no dots.
 local Trail = {}
 ns.Trail = Trail
 
@@ -20,7 +20,6 @@ local ICON_HAND_IN = "Interface\\GossipFrame\\ActiveQuestIcon"
 local SPACING = { walk = 40, fly = 120 }    -- yards between dots
 local RIDE_SPACING = 150
 local MAX_DOTS = 300
-local MINIMAP_REACH = 600       -- yards of walking drawn on the minimap, from the player
 local REDRAW_YARDS = 60         -- the player moved this far: lay the first stretch again
 local NEAR_PLAYER = 15          -- no dots this close to the player
 
@@ -34,6 +33,10 @@ local COLOUR = {
 }
 
 local drawn             -- signature of what is on the maps now
+local dotted            -- that trip has no line: it is laid as dots
+local laying            -- signature of the trip being laid, or laid last
+local failed            -- signature of the trip whose line could not be drawn
+local stale             -- the line failed after the trip was laid: lay it again, as dots
 local pools = { world = {}, minimap = {} }
 local used = { world = 0, minimap = 0 }
 
@@ -153,13 +156,14 @@ local function Place()
     lineState.width, lineState.height, lineState.mapId = width, height, mapId
 end
 
--- Never lets a drawing error reach the player: the lines go, the dots stay.
--- The next route tries again.
+-- Never lets a drawing error reach the player: the lines go, and the trip
+-- is laid again as dots. The next route tries a line again.
 function Trail.Layout()
     if lineState.error then return end
     local ok, err = pcall(Place)
     if not ok then
         lineState.error = tostring(err)
+        failed, stale = laying, true
         pcall(HideLines)
         if overlay then overlay:Hide() end
         if ns.Log then ns.Log("trail line: %s", lineState.error) end
@@ -319,17 +323,22 @@ function Trail.Show(legs)
         return
     end
     local signature = Signature(legs)
-    if signature == drawn then
+    if signature == drawn and not stale then
         Lines()
-        Follow(legs)
-        return
+        -- The world map came since, and the line with it: the dots go.
+        if not (dotted and usedSegments > 0) then
+            Follow(legs)
+            return
+        end
     end
     Trail.Clear()
     if type(CreateFrame) ~= "function" then return end
 
     -- The line: one stretch per leg that stays on one continent, and one
-    -- from each turn to the next along a real path.
-    wanted, lineState.error = {}, nil
+    -- from each turn to the next along a real path. A trip whose line failed
+    -- is not tried again: it keeps its dots.
+    wanted, laying = {}, signature
+    if signature ~= failed then lineState.error, failed = nil, nil end
     for _, leg in ipairs(legs) do
         if leg.from.continent == leg.to.continent then
             local points = Through(leg)
@@ -339,10 +348,11 @@ function Trail.Show(legs)
         end
     end
     Lines()
+    dotted, stale = usedSegments == 0 or lineState.error ~= nil, nil
 
     local pins = Pins()
     if not pins then
-        -- Nothing to lay the dots with: the trail is the line, if there is one.
+        -- Nothing to lay markers or dots with: the trail is the line, if there is one.
         drawn = usedSegments > 0 and signature or nil
         return
     end
@@ -360,7 +370,7 @@ function Trail.Show(legs)
     for index, leg in ipairs(legs) do
         local from, to = leg.from, leg.to
         local colour = COLOUR[leg.kind] or COLOUR.ride
-        if from.continent == to.continent then
+        if dotted and from.continent == to.continent then
             local points = Through(leg)
             local length = Length(points)
             local gap = (SPACING[leg.kind] or RIDE_SPACING) * stretch
@@ -384,11 +394,6 @@ function Trail.Show(legs)
                 local dot = Dot("world")
                 Style(dot, leg.kind == "walk" and 5 or 4, colour)
                 OnWorldMap(pins, dot, point)
-                if leg.kind == "walk" and index == 1 and length - at < MINIMAP_REACH then
-                    local small = Dot("minimap")
-                    Style(small, 5, colour)
-                    OnMinimap(pins, small, point, false)
-                end
                 at = at + gap
             end
         end
@@ -412,6 +417,6 @@ end
 
 -- For the debug snapshot and the tests.
 function Trail.State()
-    return { drawn = drawn ~= nil, world = used.world, minimap = used.minimap,
+    return { drawn = drawn ~= nil, dotted = dotted or false, world = used.world, minimap = used.minimap,
              lines = usedSegments, line = lineState }
 end

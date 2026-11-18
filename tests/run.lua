@@ -1776,9 +1776,10 @@ test("the route is drawn on the map and cleared with the window", function()
     local ns = Load()
     ns.Toggle()
     local onMap = Count(world.mapPins)
-    check(onMap > 20, "dots and markers on the world map, got " .. onMap)
+    check(onMap > 20, "no world map to draw a line on: dots and markers, got " .. onMap)
     check(onMap <= 320, "within the dot budget")
-    check(Count(world.minimapPins) >= 3, "the walk to the flight master is on the minimap")
+    check(ns.Trail.State().dotted, "the state says the trip is laid as dots")
+    for _, pin in pairs(world.minimapPins) do check(pin.edge, "no dot on the minimap") end
     for _, pin in pairs(world.mapPins) do
         eq(pin.flag, 3, "shown on zone, continent and world maps")
         check(pin.instance == 0 or pin.instance == 1, "on a continent")
@@ -1841,7 +1842,8 @@ test("the trip is a line on the world map, on the map it shows", function()
     local flight = shown[2]
     check(flight.to[1] < 0 or flight.to[1] > 1000 or flight.to[2] > 0 or flight.to[2] < -600,
         "a flight that leaves the zone runs off the map")
-    check(Count(world.mapPins) > 20, "the dots stay under the line")
+    eq(Count(world.mapPins), #legs, "the line is the trail: one marker where each leg ends, and no dot")
+    check(not ns.Trail.State().dotted, "the state says so")
 
     -- The map moves to Ashenvale: the other continent's stretches show instead.
     WorldMapFrame.mapId = 1440
@@ -1897,10 +1899,12 @@ test("the line is made once the world map exists, and follows the player", funct
     ns.Toggle()
     eq(ns.Trail.State().lines, 0, "no world map yet: no line")
     check(ns.Trail.State().drawn, "the dots are down")
+    check(Count(world.mapPins) > 20, "dots meanwhile")
 
     OpenWorldMap(1417)
     Advance(2)
     check(ns.Trail.State().lines > 0, "the map is there now: the same route gets its lines")
+    eq(Count(world.mapPins), #ns.state.plan.ready[1].target.legs, "and the dots are gone: the markers only")
     local walk = ShownLines()[1]
     local px = OnMap(1417, HAMMERFALL[1] - 200, HAMMERFALL[2])
     check(math.abs(walk.from[1] - px * 1000) < 0.01, "from the player")
@@ -1914,7 +1918,7 @@ test("the line is made once the world map exists, and follows the player", funct
     WorldMapFrame = nil
 end)
 
-test("a world map that cannot take a line leaves the dots alone", function()
+test("a world map that cannot take a line gets the trip as dots", function()
     TravelScene(HAMMERFALL[1] - 200, HAMMERFALL[2])
     local ns = Load()
     local canvas = OpenWorldMap(1417)
@@ -1925,6 +1929,29 @@ test("a world map that cannot take a line leaves the dots alone", function()
     check(Count(world.mapPins) > 20, "the dots are there")
     check(ns.Trail.State().drawn, "and the trail counts as drawn")
     ns.Toggle()
+    WorldMapFrame = nil
+end)
+
+test("a line that fails once the trip is drawn gives way to dots", function()
+    TravelScene(HAMMERFALL[1] - 200, HAMMERFALL[2])
+    local ns = Load()
+    local canvas = OpenWorldMap(1417)
+    ns.Toggle()
+    local legs = #ns.state.plan.ready[1].target.legs
+    eq(Count(world.mapPins), legs, "a line, the markers, no dot")
+    -- The map changes under the line and can no longer take it.
+    function canvas:GetWidth() error("canvas gone") end
+    WorldMapFrame.mapId = 1440
+    ns.Trail.Layout()
+    check(ns.Trail.State().line.error ~= nil, "the reason is kept")
+    Advance(2)
+    eq(#ShownLines(), 0, "no line any more")
+    check(Count(world.mapPins) > 20, "the same trip is laid again, as dots")
+    local pins = Count(world.mapPins)
+    Advance(4)
+    eq(Count(world.mapPins), pins, "once: not laid again at every refresh")
+    ns.Toggle()
+    eq(Count(world.mapPins), 0, "closing takes them all off")
     WorldMapFrame = nil
 end)
 
@@ -2603,24 +2630,8 @@ test("the path is drawn on the maps, turn by turn", function()
     Advance(0.1)
     eq(ns.Trail.State().lines, #ROUND + 1, "one line from each turn to the next")
     eq(#ShownLines(), #ROUND + 1, "all on the map of Kalimdor")
-    local path = Target(ns).legs[1].path
-    local dots, corner = 0, false
-    for _, pin in pairs(world.mapPins) do
-        dots = dots + 1
-        -- The pin library's axes are the game's swapped.
-        check(OffPath(path, pin.y, pin.x) < 1, "a dot off the path at " .. pin.y .. ", " .. pin.x)
-        if pin.y > -700 then corner = true end
-    end
-    check(dots > 20, "dots along it: " .. dots)
-    check(corner, "up to the north, where the straight line never goes")
-    local near = 0
-    for _, pin in pairs(world.minimapPins) do
-        if not pin.edge then
-            near = near + 1
-            check(OffPath(path, pin.y, pin.x) < 1, "a minimap dot off the path")
-        end
-    end
-    check(near >= 3, "the first stretch is on the minimap: " .. near)
+    eq(Count(world.mapPins), #Target(ns).legs, "the line is the trail: the marker of the hand-in, no dot")
+    for _, pin in pairs(world.minimapPins) do check(pin.edge, "no dot on the minimap") end
     ns.Toggle()
     eq(#ShownLines(), 0, "closing the window takes the lines off")
     WorldMapFrame = nil
