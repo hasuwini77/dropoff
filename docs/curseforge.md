@@ -58,7 +58,7 @@ It reads your bags and your quest log, finds the quests you have already finishe
 What you get
 
 - A list of finished quests, with the slots each one frees and the distance or travel time to the hand-in.
-- The trip to the current quest as numbered steps, with flights, zeppelins and boats, and a time estimate. It is an estimate: a walk is a straight line inside a zone, and it changes zone only where the zones join.
+- The trip to the current quest as numbered steps, with flights, zeppelins and boats, and a time estimate. It is an estimate: a walk is a straight line inside a zone, marked "as the crow flies", and it changes zone only where the zones join. With Polestar and its walking maps enabled, the walk of the current trip follows the real path instead.
 - An arrow to the next stop of the trip. It uses TomTom if you have it and the game's own map pin if you don't.
 - The trip drawn as a line on the world map and as dots on the minimap.
 - Click a quest to go there first. Click it again to go back to quickest first.
@@ -70,6 +70,7 @@ Requirements
 
 - Questie, for the hand-in locations. Without it you still get the list and the slot counts, but no directions.
 - TomTom is optional.
+- Polestar is optional: with it, walks follow the roads and go round the mountains.
 - DropOff learns your flight paths when you open a flight map. Until then it takes them as known.
 
 Commands
@@ -94,7 +95,7 @@ L'addon lit tes sacs et ton journal de quêtes, repère les quêtes déjà termi
 Ce que tu as
 
 - La liste des quêtes terminées, avec les emplacements libérés et la distance ou le temps de trajet jusqu'au PNJ.
-- Le trajet vers la quête en cours en étapes numérotées, avec les vols, les zeppelins et les bateaux, et une durée estimée. C'est une estimation : un trajet à pied est une ligne droite dans une zone, et il change de zone uniquement là où les zones se rejoignent.
+- Le trajet vers la quête en cours en étapes numérotées, avec les vols, les zeppelins et les bateaux, et une durée estimée. C'est une estimation : un trajet à pied est une ligne droite dans une zone, marquée « à vol d'oiseau », et il change de zone uniquement là où les zones se rejoignent. Avec Polestar et ses cartes de marche activés, le trajet à pied en cours suit le vrai chemin.
 - Une flèche vers la prochaine étape. Elle passe par TomTom si tu l'as, sinon par le repère de carte du jeu.
 - Le trajet tracé d'un trait sur la carte du monde et en pointillés sur la minicarte.
 - Clique sur une quête pour y aller en premier. Clique à nouveau pour revenir à la plus rapide d'abord.
@@ -106,6 +107,7 @@ Prérequis
 
 - Questie, pour savoir où rendre chaque quête. Sans lui tu gardes la liste et le nombre d'emplacements, mais pas le chemin.
 - TomTom est facultatif.
+- Polestar est facultatif : avec lui, les trajets à pied suivent les routes et contournent les montagnes.
 - DropOff apprend tes trajets de vol quand tu ouvres une carte de vol. En attendant, il les considère comme connus.
 
 Commandes

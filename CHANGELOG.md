@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.6.0
+
+- Real walking paths. When Polestar's walking router is loaded (Polestar with its "Polestar Nav" part and the walking maps of your continent enabled), DropOff asks it for the way on foot and draws that path on the world map and the minimap, round the mountains and along the roads. The step shows the path's real distance and time.
+- With a real path, the walk to a zone border is no longer a step of its own: the trip says one walk, to where it ends.
+- The arrow follows the path from turn to turn. The hand-in keeps its own pin on the map.
+- Without the router every walk is still a straight line, and its distance now says so: "as the crow flies". A plain walk to a hand-in nearby gets that line too, in both window sizes.
+- The order of the list still compares straight lines: only the trip the arrow is on is searched. The choice between walking and flying does not use real walking distances yet.
+- DropOff contains nothing of Polestar and never loads it: it calls the router when it is already there. `/dropoff debug` records whether a router was found, what it answered, the straight and the real yards, and how long the search took.
+- Not yet checked in game. The first search takes a few seconds, more the first time on a continent.
+
 ## 0.5.1
 
 - The small window now warns when collapsed quest-log headers hide quests, as the whole list does. Before, it said there was nothing to turn in.
