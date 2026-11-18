@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.7.0
+
+- DropOff finds the real way on foot itself. No other addon is needed: Polestar is no longer used. The walking router and its maps are those of Shortest Path Forever by Cillian Berragan, embedded with their licence.
+- Lifts. The way goes down or up a lift when that is shorter, or the only way: Thunder Bluff, the Undercity, the Great Lift, Freewind Post. A line under the steps says "On the way: take the lift." The arrow stops at the lift until you reach it. One lift at most per walk.
+- A hand-in standing over or under another floor (a mine under a hill, the Undercity under its ruins) is reached on its own floor. In the Undercity the walk starts on the city's floor.
+- The walks on the other continent of a trip are real paths too.
+- New folders: the walking maps come as three addons of their own, `DropOff_Paths_EasternKingdoms`, `DropOff_Paths_Kalimdor` and `DropOff_Paths_Zephras` (about 23 MB together). The game reads one only at the first walk on that continent, which takes a moment, and never during a fight. Quit the game and start it again after installing: `/reload` is not enough, and the walks stay straight lines until then. If the three show as disabled in the addon list, enable them.
+- Licence: DropOff is under the GNU General Public License, version 3 or later, from this version on, because it embeds GPL code and data. 0.6.0 is the last MIT version. See `LICENSES/ShortestPathForever.txt`.
+- `/dropoff debug` records, per continent, whether the maps are in memory, what the game answered when they were asked for, how many searches a walk took, the way straight there beside the way kept, and whether it takes a lift.
+- The order of the list and the choice between walking and flying still compare straight lines.
+- Not yet checked in game. Outside it, the router finds about three kilometres from the Thunder Bluff flight master to Ghost Walker Post, down a lift, where the straight line is 1 700 yards through the cliff.
+
 ## 0.6.0
 
 - Real walking paths. When Polestar's walking router is loaded (Polestar with its "Polestar Nav" part and the walking maps of your continent enabled), DropOff asks it for the way on foot and draws that path on the world map and the minimap, round the mountains and along the roads. The step shows the path's real distance and time.
