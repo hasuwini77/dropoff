@@ -29,8 +29,9 @@ local SOFT = { 0.82, 0.82, 0.82 }
 local DISABLED = { 0.5, 0.5, 0.5 }
 local MAX_STEPS = 8                      -- route steps listed under the current quest
 local TOP_FULL, TOP_COMPACT = 36, 20     -- from the title down to the first line
-local SMALLER = "Interface\\Buttons\\UI-Panel-SmallerButton-"
-local BIGGER = "Interface\\Buttons\\UI-Panel-BiggerButton-"
+local SHRINK = "Interface\\Buttons\\UI-MinusButton-"    -- the size button: minus shrinks,
+local EXPAND = "Interface\\Buttons\\UI-PlusButton-"     -- plus brings the list back
+local SIZE_BUTTON = 16
 
 local frame
 local rows, labels = {}, {}
@@ -208,11 +209,9 @@ local function Build()
     -- Size button, left of the cross: the small window, or the whole list.
     local size = CreateFrame("Button", nil, frame)
     frame.size = size
-    local side = frame.close:GetWidth()
-    if type(side) ~= "number" or side <= 0 then side = 32 end
-    size:SetSize(side, side)
-    size:SetPoint("RIGHT", frame.close, "LEFT", side / 4, 0)
-    size:SetHighlightTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight", "ADD")
+    size:SetSize(SIZE_BUTTON, SIZE_BUTTON)
+    size:SetPoint("RIGHT", frame.close, "LEFT", 0, 0)
+    size:SetHighlightTexture("Interface\\Buttons\\UI-PlusButton-Hilight", "ADD")
     local function sizeTip(self)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
@@ -315,6 +314,9 @@ function UI.Lines(plan, compact)
     end
 
     if compact then
+        -- Quests the log hides are said in both sizes: without it the small
+        -- window would claim there is nothing to turn in.
+        if (plan.hidden or 0) > 0 then note(L.HIDDEN_QUESTS:format(plan.hidden)) end
         local shown = plan.ready[1]
         for _, quest in ipairs(plan.ready) do
             if quest.id == plan.current then shown = quest end
@@ -413,7 +415,7 @@ function UI.Render(plan)
     local compact = UI.IsCompact()
     frame.summary:SetShown(not compact)
     -- The button shows what a click gives: the other size.
-    local art = compact and BIGGER or SMALLER
+    local art = compact and EXPAND or SHRINK
     frame.size:SetNormalTexture(art .. "Up")
     frame.size:SetPushedTexture(art .. "Down")
     frame.size.compact = compact
