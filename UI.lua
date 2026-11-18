@@ -223,7 +223,10 @@ end
 
 local function DistanceLabel(target)
     if not target then return "" end
-    if target.dist then return L.DIST_YARDS:format(math.floor(target.dist + 0.5)) end
+    -- A trip with a flight or a crossing is told in minutes, like the order
+    -- of the list; a plain walk in yards.
+    local trip = target.eta and target.legs and #target.legs > 1
+    if target.dist and not trip then return L.DIST_YARDS:format(math.floor(target.dist + 0.5)) end
     if target.eta then return L.ETA:format(math.max(1, math.floor(target.eta / 60 + 0.5))) end
     return target.far and L.DIST_FAR or ""
 end
