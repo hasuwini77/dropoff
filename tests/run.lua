@@ -1100,6 +1100,16 @@ test("a right-click on the minimap icon switches the size, opening the window", 
     eq(#ns.UI.Rows(), 1, "/dropoff mini does the same")
 end)
 
+test("the small window says so when the quest log hides quests", function()
+    Scene()
+    world.collapsed = true
+    local ns = Load()
+    DropOffCharDB.compact = true
+    ns.Toggle()
+    eq(#ns.UI.Rows(), 0, "no row: nothing readable")
+    check(HasLabel(ns, ns.L.HIDDEN_QUESTS:format(7)), "the warning of the whole list is there too")
+end)
+
 test("the small window with nothing to turn in", function()
     NewWorld()
     local ns = Load()
