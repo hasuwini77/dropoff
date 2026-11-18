@@ -177,6 +177,8 @@ local function NewWorld()
         superTracked = false,
         clearedUserWaypoint = 0,
         travel = false,     -- true: plan with the real travel data
+        engine = nil,       -- a walking router another addon has loaded (Router below)
+        combat = false,
         onTaxi = false,
         taxiNodes = nil,    -- what the open flight map lists: { { nodeID, state } }
         unplaced = {},      -- mapId -> true: the game cannot turn its points into world yards yet
@@ -202,7 +204,8 @@ local function InstallGlobals()
     date = function() return "00:00:00" end
     GetBuildInfo = function() return "1.60.1", "70938", "Nov 1 2026", 16001 end
     UnitFactionGroup = function() return world.faction end
-    InCombatLockdown = function() return false end
+    InCombatLockdown = function() return world.combat or false end
+    Polestar_NavEngine = world.engine
     UnitOnTaxi = function() return world.onTaxi end
     Enum = { FlightPathState = { Current = 0, Reachable = 1, Unreachable = 2 } }
     GetTaxiMapID = function() return 1415 end
@@ -2180,6 +2183,398 @@ test("the snapshot records the route", function()
     check(quest.target.eta and #quest.target.legs == 6, "legs and time saved")
     check(DropOffDB.snapshot.trail.drawn, "trail state saved")
     check(DropOffDB.snapshot.flights.allTaxiNodes, "flight map API noted")
+end)
+
+---------------------------------------------------------------------------
+-- Real walks: a walking router another addon has loaded
+---------------------------------------------------------------------------
+
+-- A router with the calls of Polestar's (the global Polestar_NavEngine): it
+-- keeps what it was asked and answers when the test says so.
+--   options.resident[continent]: its maps of that continent are in memory
+--   options.nodata[continent]: it has none for that continent
+--   options.throws: every search raises an error
+local function Router(options)
+    options = options or {}
+    local router = { asks = {}, cancels = 0 }
+    function router.Find(map, from, to, callback, opts)
+        if options.throws then error("router exploded") end
+        local job = { map = map, from = from, to = to, callback = callback, opts = opts }
+        router.asks[#router.asks + 1] = job
+        return job
+    end
+    function router.Cancel(job)
+        job.cancelled = true
+        router.cancels = router.cancels + 1
+    end
+    function router.Available(map) return not (options.nodata or {})[map] end
+    function router.Resident(map) return (options.resident or {})[map] == true end
+    -- Answers a search (the last one asked): a path from its start through
+    -- `turns` ({ { x, y }, ... }) to its goal, or the reason there is none.
+    -- A cancelled search is never answered, unless `late` says so.
+    function router.Answer(turns, job, late)
+        job = job or router.asks[#router.asks]
+        if job.cancelled and not late then return end
+        if type(turns) == "string" then
+            job.callback(nil, turns, job)
+            return
+        end
+        local points = { { map = job.map, x = job.from.x, y = job.from.y, z = 152 } }
+        for _, turn in ipairs(turns) do points[#points + 1] = { map = job.map, x = turn[1], y = turn[2], z = 100 } end
+        points[#points + 1] = { map = job.map, x = job.to.x, y = job.to.y }
+        points.wet = 0
+        local yards = 0
+        for index = 2, #points do
+            yards = yards + math.sqrt((points[index].x - points[index - 1].x) ^ 2 + (points[index].y - points[index - 1].y) ^ 2)
+        end
+        job.yards = yards
+        job.callback(points, yards * 1.15, job)
+    end
+    return router
+end
+
+-- The walk that showed the problem: from the Thunder Bluff flight master to
+-- Ghost Walker Post, round the mountains. North out of the city, west over
+-- the plateau, then south.
+local THUNDER_BLUFF = { -1197.2, 29.7 }
+local ROUND = { { -400, 40 }, { -620, 400 }, { -680, 750 }, { -1050, 1250 } }
+
+local function PathYards(from, turns, to)
+    local yards, at = 0, from
+    for _, turn in ipairs(turns) do
+        yards = yards + math.sqrt((turn[1] - at[1]) ^ 2 + (turn[2] - at[2]) ^ 2)
+        at = turn
+    end
+    return yards + math.sqrt((to[1] - at[1]) ^ 2 + (to[2] - at[2]) ^ 2)
+end
+
+-- A Horde character at the Thunder Bluff flight master, a quest to hand in
+-- at Ghost Walker Post, the window open. `router`: the walking router loaded.
+local function PlateauScene(router, before)
+    TravelScene()
+    local x, y = OnMap(1412, THUNDER_BLUFF[1], THUNDER_BLUFF[2])
+    world.player = { map = 1412, x = x, y = y }
+    local nx, ny = OnMap(1443, GHOST_WALKER[1], GHOST_WALKER[2])
+    world.db.npcs[10] = { name = "Nataka Longhorn", spawns = { [405] = { { nx * 100, ny * 100 } } }, friendlyToFaction = "H" }
+    world.engine = router
+    if before then before() end
+    local ns = Load()
+    DropOffCharDB.flights, DropOffCharDB.flightsSeen = {}, { [0] = true, [1] = true }
+    for _, id in ipairs(KNOWN) do DropOffCharDB.flights[id] = true end
+    ns.Route.Reset()
+    ns.Toggle()
+    return ns
+end
+
+local function Target(ns)
+    return ns.state.plan.ready[1].target
+end
+
+local function MovePlayer(gx, gy)
+    world.player.x, world.player.y = OnMap(world.player.map, gx, gy)
+end
+
+-- Yards from a point to the nearest stretch of a path.
+local function OffPath(points, x, y)
+    local least = math.huge
+    for index = 1, #points - 1 do
+        local a, b = points[index], points[index + 1]
+        local dx, dy = b.x - a.x, b.y - a.y
+        local t = math.max(0, math.min(1, ((x - a.x) * dx + (y - a.y) * dy) / (dx * dx + dy * dy)))
+        least = math.min(least, math.sqrt((a.x + dx * t - x) ^ 2 + (a.y + dy * t - y) ^ 2))
+    end
+    return least
+end
+
+test("without a walking router a walk is a straight line and says so", function()
+    local ns = PlateauScene(nil)
+    local target = Target(ns)
+    eq(Trip(target.legs), "walk>1412|1443 walk>goal", "to the pass, then to the hand-in")
+    local labels = LabelTexts(ns)
+    check(HasText(labels, "1. Walk on into the next zone: Desolace · " .. math.floor(target.legs[1].yards + 0.5)
+        .. " yd as the crow flies"), "the walk to the pass is a straight line")
+    check(HasText(labels, "2. Go to Nataka Longhorn · " .. math.floor(target.legs[2].yards + 0.5)
+        .. " yd as the crow flies"), "and so is the one to the hand-in")
+    eq(target.walk, nil, "no real yards")
+    SlashCmdList.DROPOFF("debug")
+    eq(DropOffDB.snapshot.walk.engine, false, "the snapshot says there is no router")
+    eq(DropOffDB.snapshot.walk.asked, 0, "and nothing was asked")
+    check(not ChatHas("error"), "no error")
+end)
+
+test("a plain walk says how far in a straight line, in both sizes", function()
+    TravelScene()
+    local nx, ny = OnMap(1417, HAMMERFALL[1] - 150, HAMMERFALL[2])
+    world.db.npcs[10].spawns = { [45] = { { nx * 100, ny * 100 } } }
+    local ns = Load()
+    ns.Toggle()
+    check(HasLabel(ns, "  Go to Karang Amakkar · 150 yd as the crow flies"), "one line under the hand-in")
+    DropOffFrame.size:Click()
+    check(HasLabel(ns, "Now: Go to Karang Amakkar · 150 yd as the crow flies"), "and in the small window")
+end)
+
+test("with a walking router the walk follows its path", function()
+    local router = Router()
+    local ns = PlateauScene(router)
+    eq(#router.asks, 1, "one search")
+    local ask = router.asks[1]
+    eq(ask.map, 1, "on Kalimdor")
+    check(math.abs(ask.from.x - THUNDER_BLUFF[1]) < 0.01 and math.abs(ask.from.y - THUNDER_BLUFF[2]) < 0.01,
+        "from the player")
+    check(math.abs(ask.to.x - GHOST_WALKER[1]) < 0.5 and math.abs(ask.to.y - GHOST_WALKER[2]) < 0.5,
+        "to the hand-in itself: the pass is not a place to go through")
+    eq(ask.from.z, nil, "no height: the game gives none")
+    eq(ask.opts.profile, "Horde", "priced for the character's faction")
+    eq(Trip(Target(ns).legs), "walk>1412|1443 walk>goal", "still straight lines while the router searches")
+    check(HasText(LabelTexts(ns), "as the crow flies"), "and said so")
+
+    router.Answer(ROUND)
+    Advance(0.1)
+    local target = Target(ns)
+    local yards = PathYards(THUNDER_BLUFF, ROUND, GHOST_WALKER)
+    eq(Trip(target.legs), "walk>goal", "one walk: the pass is not a step any more")
+    local leg = target.legs[1]
+    check(leg.real and leg.final, "a real walk, to the hand-in")
+    check(math.abs(leg.yards - yards) < 1, "its yards are the path's: " .. leg.yards .. " against " .. yards)
+    check(yards > 2500, "far more than the straight line")
+    check(math.abs(target.eta - yards / 7) < 0.5, "its time is the path's, with no guess for the roads")
+    eq(#leg.path, #ROUND + 2, "the player, each turn and the hand-in")
+
+    local label = "Go to Nataka Longhorn · " .. math.floor(yards + 0.5) .. " yd"
+    check(HasLabel(ns, "  " .. label), "the step says the real yards")
+    check(not HasText(LabelTexts(ns), "as the crow flies"), "and no straight line is spoken of")
+    eq(ns.UI.Rows()[1].data.right, math.floor(yards + 0.5) .. " yd", "the row too")
+    DropOffFrame.size:Click()
+    check(HasLabel(ns, "Now: " .. label), "and the small window")
+    DropOffFrame.size:Click()
+
+    Advance(10)
+    eq(#router.asks, 1, "standing still, nothing is asked again")
+    eq(router.cancels, 0, "and nothing was cancelled")
+end)
+
+test("the path is drawn on the maps, turn by turn", function()
+    local router = Router()
+    local ns = PlateauScene(router)
+    OpenWorldMap(1414)
+    router.Answer(ROUND)
+    Advance(0.1)
+    eq(ns.Trail.State().lines, #ROUND + 1, "one line from each turn to the next")
+    eq(#ShownLines(), #ROUND + 1, "all on the map of Kalimdor")
+    local path = Target(ns).legs[1].path
+    local dots, corner = 0, false
+    for _, pin in pairs(world.mapPins) do
+        dots = dots + 1
+        -- The pin library's axes are the game's swapped.
+        check(OffPath(path, pin.y, pin.x) < 1, "a dot off the path at " .. pin.y .. ", " .. pin.x)
+        if pin.y > -700 then corner = true end
+    end
+    check(dots > 20, "dots along it: " .. dots)
+    check(corner, "up to the north, where the straight line never goes")
+    local near = 0
+    for _, pin in pairs(world.minimapPins) do
+        if not pin.edge then
+            near = near + 1
+            check(OffPath(path, pin.y, pin.x) < 1, "a minimap dot off the path")
+        end
+    end
+    check(near >= 3, "the first stretch is on the minimap: " .. near)
+    ns.Toggle()
+    eq(#ShownLines(), 0, "closing the window takes the lines off")
+    WorldMapFrame = nil
+end)
+
+test("the arrow goes from turn to turn, the hand-in keeps its pin", function()
+    local router = Router()
+    local ns = PlateauScene(router)
+    eq(world.arrow[1], 1412, "before the answer the arrow is on the pass")
+    router.Answer(ROUND)
+    Advance(0.1)
+    local tx, ty = OnMap(1412, ROUND[1][1], ROUND[1][2])
+    eq(world.arrow[1], 1412, "the first turn is in Mulgore")
+    check(math.abs(world.arrow[2] - tx) < 0.0001 and math.abs(world.arrow[3] - ty) < 0.0001, "the arrow is on it")
+    eq(world.arrow.title, "Go to Nataka Longhorn", "and says where the walk ends")
+    local handIn
+    for uid in pairs(world.waypoints) do
+        if uid ~= world.arrow then handIn = uid end
+    end
+    check(handIn and handIn[1] == 1443 and not handIn.opts.crazy, "the hand-in has its own pin in Desolace")
+
+    local adds = world.waypointAdds
+    MovePlayer(-900, 33.6)
+    Advance(2)
+    eq(world.waypointAdds, adds, "walking toward the turn, the arrow is not placed again")
+    local walked = Target(ns).legs[1].yards
+    check(math.abs(walked - (PathYards(THUNDER_BLUFF, ROUND, GHOST_WALKER) - 297.2)) < 1, "the yards left go down: " .. walked)
+
+    MovePlayer(-450, 39.3)
+    Advance(2)
+    tx, ty = OnMap(1412, ROUND[2][1], ROUND[2][2])
+    check(math.abs(world.arrow[2] - tx) < 0.0001 and math.abs(world.arrow[3] - ty) < 0.0001,
+        "fifty yards from the turn, the arrow is on the next one")
+    eq(#Target(ns).legs[1].path, #ROUND + 2, "the turn is still ahead")
+    eq(#router.asks, 1, "on the path, nothing is asked again")
+end)
+
+test("a player who leaves the path gets a new one, not at every step", function()
+    local router = Router()
+    local ns = PlateauScene(router)
+    router.Answer(ROUND)
+    Advance(0.1)
+    MovePlayer(-900, 53.6)
+    Advance(2)
+    eq(#router.asks, 1, "twenty yards off: the path still holds")
+    MovePlayer(-900, 83.6)
+    Advance(2)
+    eq(#router.asks, 1, "fifty yards off, but the last search was a moment ago")
+    check(Target(ns).legs[1].real, "the old path is still drawn meanwhile")
+    Advance(4)
+    eq(#router.asks, 2, "then a new search, from where the player is")
+    check(math.abs(router.asks[2].from.y - 83.6) < 0.01, "from there")
+    router.Answer({ { -400, 60 } })
+    Advance(0.1)
+    eq(#Target(ns).legs[1].path, 3, "the new path replaces the old one")
+    Advance(20)
+    eq(#router.asks, 2, "and holds")
+end)
+
+test("no way on foot: the straight line stays, and the router is not asked in a loop", function()
+    local router = Router()
+    local ns = PlateauScene(router)
+    router.Answer("unreachable")
+    Advance(0.1)
+    eq(Trip(Target(ns).legs), "walk>1412|1443 walk>goal", "the trip is as the planner made it")
+    check(HasText(LabelTexts(ns), "as the crow flies"), "in straight lines")
+    Advance(60)
+    eq(#router.asks, 1, "standing still, the same question is not asked again")
+    MovePlayer(THUNDER_BLUFF[1] + 40, THUNDER_BLUFF[2])
+    Advance(2)
+    eq(#router.asks, 2, "from further on it is")
+    SlashCmdList.DROPOFF("debug")
+    local walk = DropOffDB.snapshot.walk
+    eq(walk.engine, true, "the snapshot says a router is there")
+    eq(walk.answers[1].reason, "unreachable", "what it answered")
+    check(walk.answers[1].straight > 1600, "over how many straight yards")
+    check(walk.waiting ~= nil, "and that a search is under way")
+end)
+
+test("the snapshot records the router's answer", function()
+    local router = Router({ resident = { [1] = true } })
+    local ns = PlateauScene(router)
+    Advance(3)
+    router.Answer(ROUND)
+    Advance(0.1)
+    SlashCmdList.DROPOFF("debug")
+    local walk = DropOffDB.snapshot.walk
+    eq(walk.asked, 1, "one search")
+    eq(walk.answered, 1, "one answer")
+    eq(walk.waiting, nil, "none under way")
+    local answer = walk.answers[1]
+    eq(answer.reason, "ok", "a path")
+    eq(answer.real, math.floor(PathYards(THUNDER_BLUFF, ROUND, GHOST_WALKER) + 0.5), "the router's yards")
+    eq(answer.drawn, answer.real, "the yards drawn are the same")
+    eq(answer.points, #ROUND + 2, "its points")
+    check(answer.straight < answer.real, "the straight line beside it")
+    check(answer.waited >= 3, "how long it took: " .. answer.waited)
+    eq(walk.maps[1].resident, true, "Kalimdor's maps were in memory")
+    eq(walk.maps[0].resident, false, "the Eastern Kingdoms' were not")
+    eq(#router.asks, 1, "taking the snapshot asks for nothing")
+    eq(router.cancels, 0, "and cancels nothing")
+    check(ns.Walk.State().answers ~= walk.answers, "the snapshot holds a copy")
+end)
+
+test("nothing is asked in a fight", function()
+    local router = Router()
+    local ns = PlateauScene(router, function() world.combat = true end)
+    eq(#router.asks, 0, "no search in combat")
+    eq(ns.Walk.State().held, "combat", "the reason is kept")
+    world.combat = false
+    Advance(2)
+    eq(#router.asks, 1, "out of combat it is asked")
+end)
+
+test("closing the window gives the search up", function()
+    local router = Router()
+    local ns = PlateauScene(router)
+    ns.Toggle()
+    eq(router.cancels, 1, "the search is cancelled")
+    router.Answer(ROUND, nil, true)
+    ns.Toggle()
+    eq(Trip(Target(ns).legs), "walk>1412|1443 walk>goal", "an answer that comes all the same is not used")
+    eq(#router.asks, 2, "the window open again: asked again")
+end)
+
+test("a walk on the other continent waits until the router has its maps", function()
+    TravelScene(HAMMERFALL[1] - 200, HAMMERFALL[2])
+    local router = Router()
+    world.engine = router
+    local ns = Load()
+    ns.Toggle()
+    eq(#router.asks, 1, "the walk to the flight master, where the player is")
+    eq(router.asks[1].map, 0, "in the Eastern Kingdoms")
+    router.Answer({})
+    Advance(3)
+    eq(#router.asks, 2, "then the walk to the zeppelin, one search at a time")
+    router.Answer({})
+    Advance(3)
+    for _, ask in ipairs(router.asks) do eq(ask.map, 0, "nothing asked on Kalimdor") end
+    eq(ns.Walk.State().held, "elsewhere", "the reason is kept")
+    local legs = Target(ns).legs
+    check(legs[1].real, "the first walk is real")
+    check(not legs[#legs].real, "the last one, in Ashenvale, a straight line")
+    check(HasText(LabelTexts(ns), "as the crow flies"), "and said so")
+end)
+
+test("a router with no maps of the continent is not asked", function()
+    local router = Router({ nodata = { [1] = true } })
+    local ns = PlateauScene(router)
+    Advance(5)
+    eq(#router.asks, 0, "no search")
+    eq(ns.Walk.State().held, "nodata", "the reason is kept")
+    check(HasText(LabelTexts(ns), "as the crow flies"), "straight lines")
+end)
+
+test("a broken router never breaks the trip", function()
+    local ns = PlateauScene(Router({ throws = true }))
+    Advance(5)
+    check(not ChatHas("error"), "no error shown")
+    eq(Trip(Target(ns).legs), "walk>1412|1443 walk>goal", "the trip is the planner's")
+    eq(ns.Walk.State().answers[1].reason:sub(1, 6), "error:", "the snapshot keeps why")
+    eq(ns.Walk.State().asked, 1, "and it is not asked at every tick")
+
+    ns = PlateauScene({ Find = "not a function", Cancel = function() end })
+    eq(ns.Walk.State().engine, false, "a global that is not a router is not one")
+
+    local router = Router()
+    ns = PlateauScene(router)
+    router.asks[1].callback({ "junk", { x = "a" } }, 12, nil)
+    Advance(0.1)
+    eq(Trip(Target(ns).legs), "walk>1412|1443 walk>goal", "points that are no path are not drawn")
+    eq(ns.Walk.State().answers[1].reason, "empty", "and said so")
+end)
+
+test("the order of the list does not move when a real walk is longer", function()
+    local router = Router()
+    local ns = PlateauScene(router, function()
+        -- A second hand-in 300 straight yards beyond the first.
+        world.items[200] = { name = "Kodo Horn", class = 12 }
+        Put(200, 1)
+        world.quests[2] = { id = 2, title = "Further", complete = true, objectives = { { "Horn: 1/1", "item", true } } }
+        world.db.quests[2] = { objectives = { nil, nil, { { 200 } } }, finishedBy = { { 20 } } }
+        local nx, ny = OnMap(1443, GHOST_WALKER[1] - 300, GHOST_WALKER[2])
+        world.db.npcs[20] = { name = "Far One", spawns = { [405] = { { nx * 100, ny * 100 } } }, friendlyToFaction = "H" }
+    end)
+    eq(Titles(ns.state.plan.ready), "King of the Foulweald,Further", "the nearer one first")
+    router.Answer(ROUND)
+    Advance(5)
+    eq(Titles(ns.state.plan.ready), "King of the Foulweald,Further", "still first with its real, longer walk")
+    check(Target(ns).eta > ns.state.plan.ready[2].target.eta, "though its real time is the longer one")
+    eq(#router.asks, 1, "and only the trip the arrow is on is searched")
+end)
+
+test("French: à vol d'oiseau", function()
+    local ns = PlateauScene(nil, function() world.locale = "frFR" end)
+    check(HasText(LabelTexts(ns), "m à vol d'oiseau"), "a straight line says so in French")
 end)
 
 ---------------------------------------------------------------------------
