@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.1
+
+- The small window now warns when collapsed quest-log headers hide quests, as the whole list does. Before, it said there was nothing to turn in.
+- The size button is a minus (shrink) or a plus (expand).
+
 ## 0.5.0
 
 - An icon on the minimap. A click opens or closes DropOff, a right-click switches between the small window and the whole list, and the icon can be dragged round the rim. `/dropoff minimap` hides it or brings it back.
