@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2
+
+- With the OpenMap addon, the map button now moves the map onto the hand-in. Before, a hand-in near the edge of a zone could be outside the part of the map on screen.
+
 ## 0.2.1
 
 - The window now sits below the world map, so it no longer hides a map pin near the edge.
