@@ -467,8 +467,7 @@ end
 
 -- One line telling the player what to do for leg `index` of `legs`.
 -- `who` is the name of the hand-in, for the last leg. `bare` leaves out the
--- walking distance, for a text that must not change at every step. A walk
--- with no real path (Walk.lua) is a straight line, and its distance says so.
+-- walking distance, for a text that must not change at every step.
 function Route.StepText(legs, index, who, bare)
     local L = ns.L
     local leg = legs[index]
@@ -487,10 +486,14 @@ function Route.StepText(legs, index, who, bare)
         local nextLeg = legs[index + 1]
         text = Named("STEP_TO_" .. (nextLeg and RIDE[nextLeg.kind] or "BOAT"), DockName(leg.to))
     end
-    if leg.yards and not bare then
-        text = text .. " · " .. (leg.real and L.DIST_YARDS or L.DIST_CROW):format(math.floor(leg.yards + 0.5))
-    end
+    if leg.yards and not bare then text = text .. " · " .. L.DIST_YARDS:format(math.floor(leg.yards + 0.5)) end
     return text
+end
+
+-- Is this leg a walk counted along a straight line, with no real path
+-- (Walk.lua)? The window says so under the steps.
+function Route.Straight(leg)
+    return leg.kind == "walk" and leg.yards ~= nil and not leg.real
 end
 
 -- "about 13 min" style duration.
