@@ -25,3 +25,4 @@ Plan.lua
 Nav.lua
 Trail.lua
 UI.lua
+MinimapButton.lua

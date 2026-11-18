@@ -2,7 +2,8 @@ local _, ns = ...
 local L = ns.L
 
 -- The turn-in window: a short list, nearest first. Showing it starts the
--- guidance, hiding it stops it.
+-- guidance, hiding it stops it. It has two sizes: the whole list, or only
+-- the next hand-in and what to do now. The guidance runs the same in both.
 local UI = {}
 ns.UI = UI
 
@@ -27,6 +28,9 @@ local GREEN = { 0.35, 0.9, 0.45 }
 local SOFT = { 0.82, 0.82, 0.82 }
 local DISABLED = { 0.5, 0.5, 0.5 }
 local MAX_STEPS = 8                      -- route steps listed under the current quest
+local TOP_FULL, TOP_COMPACT = 36, 20     -- from the title down to the first line
+local SMALLER = "Interface\\Buttons\\UI-Panel-SmallerButton-"
+local BIGGER = "Interface\\Buttons\\UI-Panel-BiggerButton-"
 
 local frame
 local rows, labels = {}, {}
@@ -40,6 +44,15 @@ local function SavePosition()
     if point and type(DropOffDB) == "table" then
         DropOffDB.pos = { point, relativePoint, x, y }
     end
+end
+
+-- Holds the window by its top-left corner, so it grows and shrinks downwards
+-- and the buttons of its title stay under the pointer.
+local function AnchorTop()
+    local left, top = frame:GetLeft(), frame:GetTop()
+    if type(left) ~= "number" or type(top) ~= "number" then return end
+    frame:ClearAllPoints()
+    frame:SetPoint("TOPLEFT", UIParent, "BOTTOMLEFT", left, top)
 end
 
 local function RestorePosition()
@@ -164,6 +177,7 @@ local function Build()
     frame:SetScript("OnDragStart", function(self) self:StartMoving() end)
     frame:SetScript("OnDragStop", function(self)
         self:StopMovingOrSizing()
+        AnchorTop()
         SavePosition()
     end)
     if frame.SetBackdrop then
@@ -190,6 +204,26 @@ local function Build()
     frame.close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     frame.close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -2)
     frame.close:SetScript("OnClick", function() frame:Hide() end)
+
+    -- Size button, left of the cross: the small window, or the whole list.
+    local size = CreateFrame("Button", nil, frame)
+    frame.size = size
+    local side = frame.close:GetWidth()
+    if type(side) ~= "number" or side <= 0 then side = 32 end
+    size:SetSize(side, side)
+    size:SetPoint("RIGHT", frame.close, "LEFT", side / 4, 0)
+    size:SetHighlightTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight", "ADD")
+    size:SetScript("OnClick", function()
+        if GameTooltip then GameTooltip:Hide() end
+        UI.SetCompact(not UI.IsCompact())
+    end)
+    size:SetScript("OnEnter", function(self)
+        if not GameTooltip then return end
+        GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
+        GameTooltip:AddLine(UI.IsCompact() and L.TIP_EXPAND or L.TIP_COMPACT, 1, 1, 1)
+        GameTooltip:Show()
+    end)
+    size:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
     -- Hide before wiring the scripts: frames are born shown, and this first
     -- Hide must not count as the player leaving turn-in mode.
@@ -237,7 +271,8 @@ local function QuestIcon(quest)
 end
 
 -- Flattens the plan into the lines the window draws, top to bottom.
-function UI.Lines(plan)
+-- `compact`: only the hand-in the arrow points at and what to do now.
+function UI.Lines(plan, compact)
     local lines = {}
     local function header(text) lines[#lines + 1] = { kind = "label", text = text, height = HEADER_HEIGHT } end
     local function note(text, colour)
@@ -261,6 +296,42 @@ function UI.Lines(plan)
         if assumed then note("  " .. L.ROUTE_ASSUMED) end
     end
 
+    local function readyRow(quest)
+        local pinned = ns.state.pinned == quest.id
+        lines[#lines + 1] = {
+            kind = "row", height = ROW_HEIGHT,
+            questID = quest.id, canPin = quest.target ~= nil,
+            current = plan.current == quest.id,
+            icon = QuestIcon(quest), title = quest.title, titleColour = GOLD,
+            sub = Where(quest, plan), where = Where(quest, plan),
+            right = DistanceLabel(quest.target),
+            badge = quest.slots > 0 and L.SLOTS:format(quest.slots) or "", badgeColour = GREEN,
+            items = quest.items,
+            hint = quest.target and (pinned and L.TIP_PINNED or L.TIP_CLICK) or nil,
+        }
+    end
+
+    if compact then
+        local shown = plan.ready[1]
+        for _, quest in ipairs(plan.ready) do
+            if quest.id == plan.current then shown = quest end
+        end
+        if not shown then
+            note(L.SUMMARY_NONE:format(plan.free), SOFT)
+            return lines
+        end
+        readyRow(shown)
+        local target = shown.target
+        local legs = target and target.legs
+        if legs and #legs > 1 then
+            local first = ns.Route.FirstLeg(legs, plan.carried) or 1
+            note(L.COMPACT_STEP:format(ns.Route.StepText(legs, first, target.name)), GOLD)
+        end
+        if not plan.hasDB then note(L.NEED_QUESTIE) end
+        if #plan.ready > 1 then note(L.MORE:format(#plan.ready - 1)) end
+        return lines
+    end
+
     if (plan.hidden or 0) > 0 then note(L.HIDDEN_QUESTS:format(plan.hidden)) end
 
     local withItems, withoutItems = {}, {}
@@ -274,18 +345,7 @@ function UI.Lines(plan)
         header(title)
         for index = 1, math.min(#list, limit) do
             local quest = list[index]
-            local pinned = ns.state.pinned == quest.id
-            lines[#lines + 1] = {
-                kind = "row", height = ROW_HEIGHT,
-                questID = quest.id, canPin = quest.target ~= nil,
-                current = plan.current == quest.id,
-                icon = QuestIcon(quest), title = quest.title, titleColour = GOLD,
-                sub = Where(quest, plan), where = Where(quest, plan),
-                right = DistanceLabel(quest.target),
-                badge = quest.slots > 0 and L.SLOTS:format(quest.slots) or "", badgeColour = GREEN,
-                items = quest.items,
-                hint = quest.target and (pinned and L.TIP_PINNED or L.TIP_CLICK) or nil,
-            }
+            readyRow(quest)
             if plan.current == quest.id then route(quest) end
         end
         if #list > limit then note(L.MORE:format(#list - limit)) end
@@ -340,10 +400,17 @@ function UI.Render(plan)
     else
         frame.summary:SetText(L.SUMMARY_NONE:format(plan.free))
     end
+    local compact = UI.IsCompact()
+    frame.summary:SetShown(not compact)
+    -- The button shows what a click gives: the other size.
+    local art = compact and BIGGER or SMALLER
+    frame.size:SetNormalTexture(art .. "Up")
+    frame.size:SetPushedTexture(art .. "Down")
+    frame.size.compact = compact
 
-    local lines = UI.Lines(plan)
+    local lines = UI.Lines(plan, compact)
     local usedRows, usedLabels = 0, 0
-    local y = -(PAD + 36)
+    local y = -(PAD + (compact and TOP_COMPACT or TOP_FULL))
 
     for _, line in ipairs(lines) do
         if line.kind == "row" then
@@ -410,6 +477,21 @@ end
 function UI.Show()
     if not frame then Build() end
     frame:Show()
+end
+
+-- The small window: only the next hand-in. Kept per character.
+function UI.IsCompact()
+    return type(DropOffCharDB) == "table" and DropOffCharDB.compact == true
+end
+
+function UI.SetCompact(compact)
+    if type(DropOffCharDB) ~= "table" then return end
+    DropOffCharDB.compact = compact and true or false
+    if frame and frame:IsShown() and ns.state.plan then
+        AnchorTop()
+        SavePosition()
+        UI.Render(ns.state.plan)
+    end
 end
 
 function UI.Hide()

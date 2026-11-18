@@ -77,6 +77,8 @@ local function InitDB()
         if DropOffDB[key] == nil then DropOffDB[key] = value end
     end
     DropOffDB.log = type(DropOffDB.log) == "table" and DropOffDB.log or {}
+    -- The minimap icon: { hide = true, angle = degrees round the rim }.
+    DropOffDB.minimap = type(DropOffDB.minimap) == "table" and DropOffDB.minimap or {}
 end
 
 ---------------------------------------------------------------------------
@@ -280,6 +282,12 @@ function ns.Toggle()
     if ns.IsOpen() then ns.UI.Hide() else ns.UI.Show() end
 end
 
+-- The small window or the whole list. Opens the window when it is closed.
+function ns.ToggleCompact()
+    ns.UI.SetCompact(not ns.UI.IsCompact())
+    if not ns.IsOpen() then ns.UI.Show() end
+end
+
 function ns.Pin(questID)
     ns.state.pinned = ns.state.pinned ~= questID and questID or nil
     ns.Refresh()
@@ -327,6 +335,12 @@ local function Slash(message)
     local command = (message or ""):lower():match("^%s*(%S*)")
     if command == "" then
         ns.Toggle()
+    elseif command == "mini" then
+        ns.ToggleCompact()
+    elseif command == "minimap" then
+        DropOffDB.minimap.hide = not DropOffDB.minimap.hide and true or nil
+        ns.MinimapButton.Refresh()
+        ns.Print(DropOffDB.minimap.hide and L.MSG_MINIMAP_OFF or L.MSG_MINIMAP_ON)
     elseif command == "list" then
         PrintList()
     elseif command == "alert" then
@@ -374,7 +388,12 @@ end
 
 frame:SetScript("OnEvent", function(_, event, arg1)
     if event == "ADDON_LOADED" then
-        if arg1 == ADDON then InitDB() end
+        if arg1 == ADDON then
+            InitDB()
+            -- The way back in once the window is closed: there from the start.
+            local ok, err = pcall(ns.MinimapButton.Refresh)
+            if not ok then ns.Log("minimap icon error: %s", tostring(err)) end
+        end
         return
     end
     if type(DropOffDB) ~= "table" then InitDB() end

@@ -386,6 +386,10 @@ function Data.DebugDump()
         openMap = type(rawget(_G, "OpenMapAPI")) == "table" and OpenMapAPI.version or nil,
     }
     dump.passes = ns.Route.PassState()
+    dump.window = {
+        compact = ns.UI.IsCompact(),
+        minimapIcon = ns.MinimapButton.State(),
+    }
 
     local bags = Data.ScanBags()
     for itemID, item in pairs(bags) do
