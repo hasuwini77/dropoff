@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.0
+
+- An icon on the minimap. A click opens or closes DropOff, a right-click switches between the small window and the whole list, and the icon can be dragged round the rim. `/dropoff minimap` hides it or brings it back.
+- A small window: the button left of the cross shrinks DropOff to the next hand-in and what to do now. The same button brings the whole list back. The arrow and the line on the map keep running in both sizes, and the size is remembered per character. `/dropoff mini` does the same.
+- The cross still closes DropOff and stops the guidance. The minimap icon is the way back in.
+- The window now grows and shrinks downwards from its title, which stays where it is.
+
 ## 0.4.1
 
 - The passes between zones are now entered by hand, as points of the zone maps that the game places when the routes are built. Nothing in the addon comes from Polestar any more, and `LICENSES/Polestar.txt` is gone.

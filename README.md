@@ -33,7 +33,9 @@ It learns which flight paths your character knows the first time you open a flig
 
 ## Commands
 
-- `/dropoff` (or `/dof`): open or close the window. Open means guiding, closed means off.
+- `/dropoff` (or `/dof`), or a click on the minimap icon: open or close the window. Open means guiding, closed means off.
+- `/dropoff mini`, the button left of the cross, or a right-click on the minimap icon: the small window (the next hand-in and what to do now) or the whole list. It guides the same in both sizes.
+- `/dropoff minimap`: hide the minimap icon or bring it back. Drag it to move it round the minimap.
 - `/dropoff list`: print the route in chat.
 - `/dropoff alert`: switch the "bags nearly full" hint on or off.
 - `/dropoff debug`: save a snapshot for bug reports (see below).
@@ -49,7 +51,7 @@ The snapshot holds your quest log, the quest items in your bags and where DropOf
 
 ## En français
 
-DropOff liste les quêtes déjà terminées, indique combien d'emplacements de sac chacune libère, et te guide vers la plus rapide à rendre d'abord. Sous la quête en cours, il affiche tout le trajet, étape par étape : rejoindre le maître de vol, prendre le vol, le zeppelin ou le bateau, puis finir à pied, avec une durée estimée. Le trajet est aussi tracé d'un trait sur la carte du monde et en pointillés sur la minicarte. Tape `/dropoff` pour ouvrir la fenêtre : tant qu'elle est ouverte, la flèche pointe vers la prochaine étape. Questie donne les lieux, TomTom affiche la flèche (sinon c'est le repère de carte du jeu).
+DropOff liste les quêtes déjà terminées, indique combien d'emplacements de sac chacune libère, et te guide vers la plus rapide à rendre d'abord. Sous la quête en cours, il affiche tout le trajet, étape par étape : rejoindre le maître de vol, prendre le vol, le zeppelin ou le bateau, puis finir à pied, avec une durée estimée. Le trajet est aussi tracé d'un trait sur la carte du monde et en pointillés sur la minicarte. Tape `/dropoff` ou clique sur l'icône de la minicarte pour ouvrir la fenêtre : tant qu'elle est ouverte, la flèche pointe vers la prochaine étape. Le bouton à gauche de la croix la réduit à la prochaine quête à rendre, sans arrêter le guidage. Questie donne les lieux, TomTom affiche la flèche (sinon c'est le repère de carte du jeu).
 
 ## Development
 
