@@ -10,6 +10,7 @@
 - Licence: DropOff is under the GNU General Public License, version 3 or later, from this version on, because it embeds GPL code and data. 0.6.0 is the last MIT version. See `LICENSES/ShortestPathForever.txt`.
 - `/dropoff debug` records, per continent, whether the maps are in memory, what the game answered when they were asked for, how many searches a walk took, the way straight there beside the way kept, and whether it takes a lift.
 - The order of the list and the choice between walking and flying still compare straight lines.
+- The way on foot is the shortest one: it does not keep away from the other faction's towns, as 0.6.0 did through Polestar.
 - Not yet checked in game. Outside it, the router finds about three kilometres from the Thunder Bluff flight master to Ghost Walker Post, down a lift, where the straight line is 1 700 yards through the cliff.
 
 ## 0.6.0
