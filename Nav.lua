@@ -5,7 +5,7 @@ local _, ns = ...
 local Nav = {}
 ns.Nav = Nav
 
-local state = { key = nil, uid = nil, native = nil }
+local state = { key = nil, uid = nil, native = nil, endUid = nil }
 
 local function TomTomAddon()
     local addon = rawget(_G, "TomTom")
@@ -26,6 +26,7 @@ function Nav.State()
     return {
         mode = Nav.Mode(),
         placed = state.key ~= nil,
+        handIn = state.endUid ~= nil,
         via = state.uid and "tomtom" or state.native and "native" or nil,
         key = state.key,
         failedKey = state.failedKey,
@@ -50,22 +51,29 @@ local function NativePinIsOurs()
 end
 
 function Nav.Clear()
-    if state.uid then
-        local addon = TomTomAddon()
-        if addon then pcall(addon.RemoveWaypoint, addon, state.uid) end
+    local addon = (state.uid or state.endUid) and TomTomAddon()
+    if addon then
+        if state.uid then pcall(addon.RemoveWaypoint, addon, state.uid) end
+        if state.endUid then pcall(addon.RemoveWaypoint, addon, state.endUid) end
     end
     if state.native and NativePinIsOurs() and type(C_Map.ClearUserWaypoint) == "function" then
         pcall(C_Map.ClearUserWaypoint)
     end
-    state.key, state.uid, state.native = nil, nil, nil
+    state.key, state.uid, state.native, state.endUid = nil, nil, nil, nil
     state.failedKey, state.failedAt = nil, nil
 end
 
 -- Points at target ({ mapId, x, y } with x, y in 0..1). Returns true when a
 -- new waypoint was placed. Asking again for the same place does nothing, so a
 -- waypoint the player removed by hand stays removed until the target changes.
-function Nav.Set(target, title)
+-- When the target is only a stop on the way (a flight master, a dock),
+-- `handIn` and `handInTitle` say where the trip ends: with TomTom that place
+-- keeps its own pin on the map, without the arrow.
+function Nav.Set(target, title, handIn, handInTitle)
     local key = ("%d:%.4f:%.4f:%s"):format(target.mapId, target.x, target.y, title or "")
+    if handIn then
+        key = key .. ("|%d:%.4f:%.4f"):format(handIn.mapId, handIn.x, handIn.y)
+    end
     if state.key == key then return false end
     -- A place nothing could point at is retried every 10 s, not every tick.
     local now = type(GetTime) == "function" and GetTime() or 0
@@ -87,6 +95,19 @@ function Nav.Set(target, title)
         })
         if ok and type(uid) == "table" then
             state.key, state.uid = key, uid
+            if handIn then
+                local okEnd, endUid = pcall(addon.AddWaypoint, addon, handIn.mapId, handIn.x, handIn.y, {
+                    title = handInTitle,
+                    from = "DropOff",
+                    persistent = false,
+                    minimap = false,
+                    world = true,
+                    crazy = false,
+                    silent = true,
+                    cleardistance = 0,
+                })
+                if okEnd and type(endUid) == "table" then state.endUid = endUid end
+            end
             return true
         end
         ns.Log("TomTom waypoint failed: %s", tostring(uid))
