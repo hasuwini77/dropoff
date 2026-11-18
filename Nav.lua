@@ -113,8 +113,45 @@ function Nav.Set(target, title)
     return false
 end
 
--- Opens the world map on a zone. Returns true when the map was opened.
-function Nav.OpenMap(mapId)
+-- OpenMap (the stitched world map addon) keeps its own view: a zone opened
+-- from here can leave the place outside the part of the map on screen. Its
+-- public API moves the view. Returns true when the view was sent there.
+local function FocusOpenMap(mapId, x, y)
+    local api = rawget(_G, "OpenMapAPI")
+    if type(api) ~= "table" or api.major ~= 1 then return false end
+    if type(api.IsStitched) ~= "function" or type(api.WorldFromMap) ~= "function"
+        or type(api.ShowWorld) ~= "function" then
+        return false
+    end
+    local ok, moved = pcall(function()
+        if not api.IsStitched() then return false end
+        local u, v = api.WorldFromMap(mapId, x, y)
+        if type(u) ~= "number" or type(v) ~= "number" then return false end
+        return api.ShowWorld(u, v) and true or false
+    end)
+    return ok and moved or false
+end
+
+local FOCUS_AFTER = { 0.2, 0.8 }  -- seconds: once the map has settled, then a second try
+
+-- Brings a point of the open map into view. The map sets its own view while
+-- it opens, so this waits for it; the second try only runs if the first one
+-- found the map not ready.
+function Nav.Focus(mapId, x, y)
+    if type(x) ~= "number" or type(y) ~= "number" then return end
+    if type(C_Timer) ~= "table" or type(C_Timer.After) ~= "function" then
+        FocusOpenMap(mapId, x, y)
+        return
+    end
+    local done = false
+    for _, delay in ipairs(FOCUS_AFTER) do
+        C_Timer.After(delay, function()
+            if not done then done = FocusOpenMap(mapId, x, y) end
+        end)
+    end
+end
+
+local function Open(mapId)
     local map = rawget(_G, "WorldMapFrame")
     local hasPanel = type(map) == "table" and type(map.IsShown) == "function"
     if type(C_Map) == "table" and type(C_Map.OpenWorldMap) == "function"
@@ -132,4 +169,12 @@ function Nav.OpenMap(mapId)
     -- A panel that opened on the wrong zone is still an open map.
     if shown then pcall(map.SetMapID, map, mapId) end
     return shown
+end
+
+-- Opens the world map on a zone, with the point x, y (0..1) in view when
+-- given. Returns true when the map was opened.
+function Nav.OpenMap(mapId, x, y)
+    local opened = Open(mapId)
+    if opened then Nav.Focus(mapId, x, y) end
+    return opened
 end
