@@ -2,7 +2,7 @@
 
 ## 0.3.0
 
-- The whole trip to a hand-in, not just where it is: flight paths, zeppelins, boats, then the walk. The steps are listed under the current quest with a time estimate.
+- The whole trip to a hand-in: flight paths, zeppelins, boats, then the walk. The steps are listed under the current quest with a time estimate.
 - The arrow points at the next stop of the trip (a flight master, a dock), then at the hand-in.
 - The trip is drawn as a dotted line on the world map and the minimap.
 - Finished quests are sorted by travel time. A hand-in on another continent shows minutes instead of "far".
