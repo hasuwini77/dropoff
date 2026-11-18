@@ -16,9 +16,12 @@ local NAMES_RETRY = 10      -- seconds before asking the game for names again
 
 local CONTINENT_MAPS = { 1415, 1414 }   -- Eastern Kingdoms, Kalimdor
 local FACTION = { Horde = "H", Alliance = "A" }
-local LEARNED_TYPE = { CURRENT = true, REACHABLE = true }
+-- What the flight map calls a master the character has learned. DISTANT is
+-- one a flight only passes through: not learned.
+local LEARNED_TYPE = { CURRENT = true, REACHABLE = true, UNREACHABLE = true }
 
 local hubs, edges           -- the travel graph, built when first needed
+local builtFor              -- the faction it was built for (false: not known yet)
 local origin                -- where the last pass started
 local cost, cameFrom, cameBy   -- per hub: seconds from the origin, previous hub, edge used
 
@@ -66,6 +69,7 @@ local function Build()
     local data = ns.TravelData
     if type(data) ~= "table" then return end
     local mine = Faction()
+    builtFor = mine or false
     local function usable(faction) return faction == "B" or faction == mine end
     local function add(hub)
         hubs[#hubs + 1] = hub
@@ -136,7 +140,8 @@ local FROM_ORIGIN = { kind = "walk" }
 function Route.Begin(x, y, continent)
     origin = nil
     if type(x) ~= "number" or type(y) ~= "number" or type(continent) ~= "number" then return false end
-    if not hubs then Build() end
+    -- Built once, and again if the faction was not known the first time (login).
+    if not hubs or builtFor ~= (Faction() or false) then Build() end
     origin = { continent = continent, x = x, y = y }
     cost, cameFrom, cameBy = {}, {}, {}
 
@@ -330,7 +335,13 @@ end
 function Route.NextPlace(legs, flying)
     local first = legs and legs[1]
     if not first then return nil end
-    if first.kind == "walk" or (flying and first.kind == "fly") then return first.to end
+    if flying then
+        -- The plan dates from before take-off: the flight is its first "fly" leg.
+        for _, leg in ipairs(legs) do
+            if leg.kind == "fly" then return leg.to end
+        end
+    end
+    if first.kind == "walk" then return first.to end
     return first.from
 end
 
@@ -338,16 +349,18 @@ end
 -- Learning which flight masters the character knows
 ---------------------------------------------------------------------------
 
+-- Returns whether the flight map lists this master as learned, and whether
+-- it is the one the player is standing at.
 local function IsLearned(info)
     if type(TaxiNodeGetType) == "function" and type(info.slotIndex) == "number" then
         local kind = Try(TaxiNodeGetType, info.slotIndex)
-        if type(kind) == "string" then return LEARNED_TYPE[kind] == true end
+        if type(kind) == "string" then return LEARNED_TYPE[kind] == true, kind == "CURRENT" end
     end
     local states = type(Enum) == "table" and Enum.FlightPathState
     if type(states) == "table" then
-        return info.state == states.Current or info.state == states.Reachable
+        return info.state == states.Current or info.state == states.Reachable, info.state == states.Current
     end
-    return info.state == 0 or info.state == 1
+    return info.state == 0 or info.state == 1, info.state == 0
 end
 
 -- Reads the open flight map: the masters it lists as learned are the ones the
@@ -355,10 +368,13 @@ end
 function Route.RecordTaxiMap()
     local db, data = CharDB(), ns.TravelData
     if not db or type(data) ~= "table" then return false end
-    local learned, continents, any = {}, {}, false
-    local function learn(id)
+    local learned, continents, any, here = {}, {}, false, false
+    local function learn(id, current)
         local node = data.nodes[id]
-        if node then learned[id], continents[node[2]], any = true, true, true end
+        if node then
+            learned[id], continents[node[2]], any = true, true, true
+            here = here or current == true
+        end
     end
 
     if type(C_TaxiMap) == "table" and type(C_TaxiMap.GetAllTaxiNodes) == "function" then
@@ -367,8 +383,9 @@ function Route.RecordTaxiMap()
         local list = type(mapId) == "number" and Try(C_TaxiMap.GetAllTaxiNodes, mapId)
         if type(list) == "table" then
             for _, info in ipairs(list) do
-                if type(info) == "table" and type(info.nodeID) == "number" and IsLearned(info) then
-                    learn(info.nodeID)
+                if type(info) == "table" and type(info.nodeID) == "number" then
+                    local known, current = IsLearned(info)
+                    if known then learn(info.nodeID, current) end
                 end
             end
         end
@@ -387,7 +404,7 @@ function Route.RecordTaxiMap()
         for slot = 1, Try(NumTaxiNodes) or 0 do
             local name, kind = Try(TaxiNodeName, slot), Try(TaxiNodeGetType, slot)
             if type(name) == "string" and LEARNED_TYPE[kind] then
-                for _, id in ipairs(byName[name] or {}) do learn(id) end
+                for _, id in ipairs(byName[name] or {}) do learn(id, kind == "CURRENT") end
             end
         end
     end
@@ -395,12 +412,16 @@ function Route.RecordTaxiMap()
 
     db.flights = type(db.flights) == "table" and db.flights or {}
     db.flightsSeen = type(db.flightsSeen) == "table" and db.flightsSeen or {}
-    for id in pairs(db.flights) do
-        local node = data.nodes[id]
-        if not node or continents[node[2]] then db.flights[id] = nil end
+    -- A list with the master the player is standing at is a complete read:
+    -- it replaces what was known on that continent. Anything less only adds.
+    if here then
+        for id in pairs(db.flights) do
+            local node = data.nodes[id]
+            if not node or continents[node[2]] then db.flights[id] = nil end
+        end
+        for continent in pairs(continents) do db.flightsSeen[continent] = true end
     end
     for id in pairs(learned) do db.flights[id] = true end
-    for continent in pairs(continents) do db.flightsSeen[continent] = true end
     Route.Reset()
     return true
 end
