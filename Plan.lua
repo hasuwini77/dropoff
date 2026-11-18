@@ -25,11 +25,27 @@ local function Trip(place)
     if gx then place.eta, place.legs = Route.To(gx, gy, continent, place.mapId) end
 end
 
-local function ResolveTarget(quest)
-    local info = Data.Static(quest.id)
+-- QuestieDB's Forever database still names, for a few quests, the finisher
+-- of another version of the game beside the Forever one, and the nearest of
+-- the two is then the wrong one. For these quests only the finishers below
+-- count (NPC ids), as long as one of them is friendly and has a place: if
+-- not, the database's own list is used.
+local FOREVER_FINISHERS = {
+    -- Elemental Aid: Rau Cliffrunner at Freewind Post, not Bath'rah in the
+    -- Alterac Mountains. Seen in game on 2026-11-18.
+    [79360] = { [4722] = true },
+    -- Storm, Earth, and Fire, the same chain with the same leftover: Prate
+    -- Cloudseer. From Polestar's QuestDB, which is generated from Forever
+    -- data; not seen in game.
+    [79361] = { [5905] = true },
+}
+
+-- The best place to hand a quest in among its finishers: all of them, or
+-- only the NPCs of `only`.
+local function BestFinisher(info, only)
     local best
-    if info then
-        for _, finisher in ipairs(info.finishers) do
+    for _, finisher in ipairs(info.finishers) do
+        if not only or (finisher.kind == "npc" and only[finisher.id]) then
             local name, spawns, friendly = Data.FinisherInfo(finisher)
             if type(spawns) == "table" then
                 local place = Geo.NearestSpawn(spawns)
@@ -40,6 +56,20 @@ local function ResolveTarget(quest)
                 end
             end
         end
+    end
+    return best
+end
+
+local function ResolveTarget(quest)
+    local info = Data.Static(quest.id)
+    local best
+    if info then
+        local only = FOREVER_FINISHERS[quest.id]
+        if only then
+            best = BestFinisher(info, only)
+            if best and best.friendly then best.corrected = true else best = nil end
+        end
+        best = best or BestFinisher(info)
     end
     if not best then
         local mapId, x, y = Data.NativeWaypoint(quest.id)

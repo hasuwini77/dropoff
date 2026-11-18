@@ -65,7 +65,7 @@ What you get
 - A list of finished quests, with the slots each one frees and the distance or travel time to the hand-in.
 - The trip to the current quest as numbered steps, with flights, zeppelins and boats, and a time estimate. The walk of the current trip follows the real path: along the roads, round the mountains, down a lift when that is the way. Until that path is found it is a straight line, and the window says so ("as the crow flies").
 - An arrow to the next stop of the trip. It uses TomTom if you have it and the game's own map pin if you don't.
-- The trip drawn as a line on the world map and as dots on the minimap.
+- The trip drawn as a line on the world map.
 - Click a quest to go there first. Click it again to go back to quickest first.
 - The map icon next to a quest opens the world map on its hand-in.
 - Two more lists, without directions for now: quests in progress that hold items, and quest items that belong to no quest in your log.
@@ -102,7 +102,7 @@ Ce que tu as
 - La liste des quêtes terminées, avec les emplacements libérés et la distance ou le temps de trajet jusqu'au PNJ.
 - Le trajet vers la quête en cours en étapes numérotées, avec les vols, les zeppelins et les bateaux, et une durée estimée. Le trajet à pied en cours suit le vrai chemin : par les routes, en contournant les montagnes, par l'ascenseur quand il le faut. Tant que ce chemin n'est pas calculé, c'est une ligne droite, et la fenêtre le dit (« à vol d'oiseau »).
 - Une flèche vers la prochaine étape. Elle passe par TomTom si tu l'as, sinon par le repère de carte du jeu.
-- Le trajet tracé d'un trait sur la carte du monde et en pointillés sur la minicarte.
+- Le trajet tracé d'un trait sur la carte du monde.
 - Clique sur une quête pour y aller en premier. Clique à nouveau pour revenir à la plus rapide d'abord.
 - L'icône de carte à côté d'une quête ouvre la carte du monde sur l'endroit où la rendre.
 - Deux autres listes, sans guidage pour l'instant : les quêtes en cours qui occupent des emplacements, et les objets de quête liés à aucune quête de ton journal.

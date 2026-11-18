@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.7.1
+
+- Wrong hand-in fixed: Elemental Aid (Soutien élémentaire) sent a Horde shaman to Bath'rah in the Alterac Mountains. In WoW Forever it ends at Rau Cliffrunner, Freewind Post. Questie's Forever database names both, and DropOff took the nearest. DropOff now keeps a short list of Forever corrections for such quests: this one, seen in game, and Storm, Earth, and Fire of the same chain, from Forever data only.
+- DropOff has no quest database of its own: it reads Questie's Forever one. A hand-in that is wrong there is wrong here until it is added to that list. `tools/compare_finishers.py` lists the quests where the two Forever databases installed in the game disagree (65 today); none of the others is settled.
+- No more dots. The trip is the line on the world map, with a marker at each change of transport and at the hand-in. Dots come back only on a map that cannot take a line. The minimap keeps the marker of the next stop and has no dots.
+- `/dropoff debug` records whether a hand-in was corrected, and whether the trip is drawn as a line or as dots.
+- Not yet checked in game.
+
 ## 0.7.0
 
 - DropOff finds the real way on foot itself. No other addon is needed: Polestar is no longer used. The walking router and its maps are those of Shortest Path Forever by Cillian Berragan, embedded with their licence.
