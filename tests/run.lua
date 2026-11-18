@@ -163,6 +163,7 @@ local function InstallGlobals()
     SlashCmdList = {}
     DropOffDB, DropOffCharDB = nil, nil
     DropOffFrame = nil
+    OpenMapAPI = nil
 
     C_Timer = {
         After = function(delay, fn) timers[#timers + 1] = { at = now + delay, fn = fn } end,
@@ -764,6 +765,46 @@ test("the map button falls back to the map panel, and says so when it cannot", f
     world.chat = {}
     ns.ShowOnMap(1)
     check(ChatHas(ns.L.MSG_NO_MAP), "says the map cannot be opened")
+end)
+
+test("with OpenMap the map view is moved onto the hand-in", function()
+    Scene()
+    local ns = Load()
+    local stitched, moves = false, {}
+    OpenMapAPI = {
+        major = 1,
+        IsStitched = function() return stitched end,
+        WorldFromMap = function(mapId, x, y) return mapId + x, mapId + y end,
+        ShowWorld = function(u, v) moves[#moves + 1] = { u, v } return true end,
+    }
+    ns.Toggle()
+    ns.ShowOnMap(2)
+    eq(#moves, 0, "nothing moves before the map has settled")
+    Advance(0.3)
+    eq(#moves, 0, "a map that is not stitched yet is left alone")
+    stitched = true
+    Advance(1)
+    eq(#moves, 1, "the second try moves the view once")
+    eq(moves[1][1], 1413 + 0.5, "to the hand-in's place on the map")
+
+    moves = {}
+    ns.ShowOnMap(2)
+    Advance(2)
+    eq(#moves, 1, "an open stitched map is moved on the first try only")
+
+    OpenMapAPI.major = 2
+    moves = {}
+    ns.ShowOnMap(2)
+    Advance(2)
+    eq(#moves, 0, "an API version this was not written for is not called")
+
+    OpenMapAPI = { major = 1, IsStitched = function() return true end,
+        WorldFromMap = function() error("boom") end, ShowWorld = function() end }
+    world.chat = {}
+    ns.ShowOnMap(2)
+    Advance(2)
+    check(not ChatHas("error"), "a throwing OpenMap is ignored")
+    OpenMapAPI = nil
 end)
 
 test("without TomTom the game's map pin is used", function()

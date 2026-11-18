@@ -210,7 +210,8 @@ function ns.ShowOnMap(questID)
     local plan = ns.Refresh()
     for _, quest in ipairs(plan and plan.ready or {}) do
         if quest.id == questID and quest.target then
-            if not ns.Nav.OpenMap(quest.target.mapId) then ns.Print(L.MSG_NO_MAP) end
+            local target = quest.target
+                if not ns.Nav.OpenMap(target.mapId, target.x, target.y) then ns.Print(L.MSG_NO_MAP) end
             return
         end
     end
