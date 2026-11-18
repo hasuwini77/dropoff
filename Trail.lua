@@ -366,13 +366,16 @@ function Trail.Show(legs)
     drawn = signature
 
     -- Spread the dot budget: long trips get wider gaps.
-    local dots = 0
-    for _, leg in ipairs(legs) do
-        if leg.from.continent == leg.to.continent then
-            dots = dots + Length(Through(leg)) / (SPACING[leg.kind] or RIDE_SPACING)
+    local stretch = 1
+    if dotted then
+        local dots = 0
+        for _, leg in ipairs(legs) do
+            if leg.from.continent == leg.to.continent then
+                dots = dots + Length(Through(leg)) / (SPACING[leg.kind] or RIDE_SPACING)
+            end
         end
+        stretch = math.max(1, dots / MAX_DOTS)
     end
-    local stretch = math.max(1, dots / MAX_DOTS)
 
     for index, leg in ipairs(legs) do
         local from, to = leg.from, leg.to
