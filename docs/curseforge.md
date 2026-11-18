@@ -26,15 +26,15 @@ Publishing is free. It needs a CurseForge author account, which is why the proje
    `## X-Curse-Project-ID: <id>`
 2. Create an API token at https://authors.curseforge.com/#/settings/api-tokens and store it as a repo secret:
    `gh secret set CF_API_TOKEN --repo hasuwini77/dropoff`
-3. Set the next version in the same file (`## Version: 0.3.1`) and add its entry to `CHANGELOG.md`. The version shown in game comes from the TOC, not from the tag.
+3. Set the next version in the same file (`## Version: 0.4.1`) and add its entry to `CHANGELOG.md`. The version shown in game comes from the TOC, not from the tag.
 4. Commit, then tag and push:
-   `git tag v0.3.1 && git push origin v0.3.1`
+   `git tag v0.4.1 && git push origin v0.4.1`
 
 The release workflow runs the tests, builds `DropOff-<tag>.zip`, attaches it to a GitHub release and uploads it to CurseForge. The packager reads `## Interface: 16001` and files the upload under WoW Forever.
 
 Before the first upload, settle the licence of `Passes.lua`: its positions come from Polestar's chokepoint list, which is under the GNU GPL version 3, while the addon is MIT. Either publish DropOff under the GPL version 3, or replace those positions with ones measured in game.
 
-Tags up to `v0.3.0` were pushed before the workflows existed, so they have no zip. The first file on CurseForge is the next tag.
+Tags up to `v0.4.0` were pushed before the workflows existed, so they have no zip. The first file on CurseForge is the next tag.
 
 ## Summary (English)
 
@@ -60,7 +60,7 @@ What you get
 - A list of finished quests, with the slots each one frees and the distance or travel time to the hand-in.
 - The trip to the current quest as numbered steps, with flights, zeppelins and boats, and a time estimate. It is an estimate: a walk is a straight line inside a zone, and it changes zone only where the zones join.
 - An arrow to the next stop of the trip. It uses TomTom if you have it and the game's own map pin if you don't.
-- The trip drawn as a dotted line on the world map and the minimap.
+- The trip drawn as a line on the world map and as dots on the minimap.
 - Click a quest to go there first. Click it again to go back to quickest first.
 - The map icon next to a quest opens the world map on its hand-in.
 - Two more lists, without directions for now: quests in progress that hold items, and quest items that belong to no quest in your log.
@@ -96,7 +96,7 @@ Ce que tu as
 - La liste des quêtes terminées, avec les emplacements libérés et la distance ou le temps de trajet jusqu'au PNJ.
 - Le trajet vers la quête en cours en étapes numérotées, avec les vols, les zeppelins et les bateaux, et une durée estimée. C'est une estimation : un trajet à pied est une ligne droite dans une zone, et il change de zone uniquement là où les zones se rejoignent.
 - Une flèche vers la prochaine étape. Elle passe par TomTom si tu l'as, sinon par le repère de carte du jeu.
-- Le trajet tracé en pointillés sur la carte du monde et la minicarte.
+- Le trajet tracé d'un trait sur la carte du monde et en pointillés sur la minicarte.
 - Clique sur une quête pour y aller en premier. Clique à nouveau pour revenir à la plus rapide d'abord.
 - L'icône de carte à côté d'une quête ouvre la carte du monde sur l'endroit où la rendre.
 - Deux autres listes, sans guidage pour l'instant : les quêtes en cours qui occupent des emplacements, et les objets de quête liés à aucune quête de ton journal.
