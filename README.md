@@ -28,9 +28,9 @@ Built for **WoW Forever** (interface 16001). English and French.
 
 ## How the trip is planned
 
-The trip is an estimate. DropOff knows where every flight master and every boat, zeppelin and airship dock is, and how long each flight path is. It picks the fastest chain of those, with walks in between. A walk is a straight line inside a zone and changes zone only where the zones join, so it does not cross a mountain range between two zones. It does not follow roads, and it cannot see a cliff inside a zone. Such a walk is marked "as the crow flies".
+The trip is an estimate. DropOff knows where every flight master and every boat, zeppelin and airship dock is, and how long each flight path is. It picks the fastest chain of those, with walks in between. A walk is a straight line inside a zone and changes zone only where the zones join, so it does not cross a mountain range between two zones. It does not follow roads, and it cannot see a cliff inside a zone. The window then says the walking distances are as the crow flies.
 
-When Polestar's walking router is loaded, DropOff asks it for the real way on foot of the trip the arrow is on. The line, the dots, the arrow and the distance then follow that path, a few seconds after the trip first shows. DropOff holds none of Polestar's code or maps and does not load it: it calls the router only when Polestar has already loaded it. The choice between walking and flying, and the order of the list, still use straight lines.
+When Polestar's walking router is loaded, DropOff asks it for the real way on foot of the trip the arrow is on. The line, the dots, the arrow and the distance then follow that path, a few seconds after the trip first shows. DropOff holds none of Polestar's code or maps and does not load it: it calls the router only when Polestar has already loaded it. The router loads its own maps of a continent at the first search there. The choice between walking and flying, and the order of the list, still use straight lines.
 
 It learns which flight paths your character knows the first time you open a flight map on each continent. Before that it takes them all as known and says so under the steps.
 
@@ -54,7 +54,7 @@ The snapshot holds your quest log, the quest items in your bags and where DropOf
 
 ## En français
 
-DropOff liste les quêtes déjà terminées, indique combien d'emplacements de sac chacune libère, et te guide vers la plus rapide à rendre d'abord. Sous la quête en cours, il affiche tout le trajet, étape par étape : rejoindre le maître de vol, prendre le vol, le zeppelin ou le bateau, puis finir à pied, avec une durée estimée. Le trajet est aussi tracé d'un trait sur la carte du monde et en pointillés sur la minicarte. Tape `/dropoff` ou clique sur l'icône de la minicarte pour ouvrir la fenêtre : tant qu'elle est ouverte, la flèche pointe vers la prochaine étape. Le bouton à gauche de la croix la réduit à la prochaine quête à rendre, sans arrêter le guidage. Questie donne les lieux, TomTom affiche la flèche (sinon c'est le repère de carte du jeu). Avec Polestar et ses cartes de marche activés, les trajets à pied suivent le vrai chemin ; sans lui, ce sont des lignes droites, marquées « à vol d'oiseau ».
+DropOff liste les quêtes déjà terminées, indique combien d'emplacements de sac chacune libère, et te guide vers la plus rapide à rendre d'abord. Sous la quête en cours, il affiche tout le trajet, étape par étape : rejoindre le maître de vol, prendre le vol, le zeppelin ou le bateau, puis finir à pied, avec une durée estimée. Le trajet est aussi tracé d'un trait sur la carte du monde et en pointillés sur la minicarte. Tape `/dropoff` ou clique sur l'icône de la minicarte pour ouvrir la fenêtre : tant qu'elle est ouverte, la flèche pointe vers la prochaine étape. Le bouton à gauche de la croix la réduit à la prochaine quête à rendre, sans arrêter le guidage. Questie donne les lieux, TomTom affiche la flèche (sinon c'est le repère de carte du jeu). Avec Polestar et ses cartes de marche activés, les trajets à pied suivent le vrai chemin ; sans lui, ce sont des lignes droites, et la fenêtre le dit : « à vol d'oiseau ».
 
 ## Development
 
