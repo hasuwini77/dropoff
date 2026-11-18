@@ -1755,6 +1755,7 @@ test("the small window tells what to do now on a trip", function()
     ns.Toggle()
     eq(#ns.UI.Rows(), 1, "one row")
     check(HasLabel(ns, "Now: Fly to Undercity"), "the first step of the trip")
+    check(HasLabel(ns, ns.L.ROUTE_ASSUMED), "and that its flights are not checked yet, as the whole list says")
     check(not HasLabel(ns, "  2. Go to the zeppelin: Undercity"), "not the others")
     check(Count(world.mapPins) > 0, "the trip is still drawn on the map")
 

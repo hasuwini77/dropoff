@@ -213,16 +213,19 @@ local function Build()
     size:SetSize(side, side)
     size:SetPoint("RIGHT", frame.close, "LEFT", side / 4, 0)
     size:SetHighlightTexture("Interface\\Buttons\\UI-Panel-MinimizeButton-Highlight", "ADD")
-    size:SetScript("OnClick", function()
-        if GameTooltip then GameTooltip:Hide() end
-        UI.SetCompact(not UI.IsCompact())
-    end)
-    size:SetScript("OnEnter", function(self)
+    local function sizeTip(self)
         if not GameTooltip then return end
         GameTooltip:SetOwner(self, "ANCHOR_RIGHT")
         GameTooltip:AddLine(UI.IsCompact() and L.TIP_EXPAND or L.TIP_COMPACT, 1, 1, 1)
         GameTooltip:Show()
+    end
+    size:SetScript("OnClick", function(self)
+        if GameTooltip then GameTooltip:Hide() end
+        UI.SetCompact(not UI.IsCompact())
+        -- The pointer is still on the button: it now says what the next click does.
+        if self:IsMouseOver() then sizeTip(self) end
     end)
+    size:SetScript("OnEnter", sizeTip)
     size:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
 
     -- Hide before wiring the scripts: frames are born shown, and this first
@@ -326,6 +329,13 @@ function UI.Lines(plan, compact)
         if legs and #legs > 1 then
             local first = ns.Route.FirstLeg(legs, plan.carried) or 1
             note(L.COMPACT_STEP:format(ns.Route.StepText(legs, first, target.name)), GOLD)
+            -- A flight taken on trust is said so here too, whichever step it is.
+            for index = first, #legs do
+                if legs[index].assumed then
+                    note(L.ROUTE_ASSUMED)
+                    break
+                end
+            end
         end
         if not plan.hasDB then note(L.NEED_QUESTIE) end
         if #plan.ready > 1 then note(L.MORE:format(#plan.ready - 1)) end

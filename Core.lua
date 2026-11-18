@@ -399,6 +399,8 @@ frame:SetScript("OnEvent", function(_, event, arg1)
     if type(DropOffDB) ~= "table" then InitDB() end
 
     if event == "PLAYER_ENTERING_WORLD" then
+        -- Placed again: the minimap may have been resized since the addon loaded.
+        pcall(ns.MinimapButton.Refresh)
         if DropOffCharDB.open and not ns.IsOpen() then
             -- Give Questie and TomTom a moment to finish their own start-up.
             C_Timer.After(3, function()
