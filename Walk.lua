@@ -37,7 +37,7 @@ local ANSWERS_KEPT = 4      -- answers kept for the debug snapshot
 -- The router's reasons that are answers, not failures: no way from there.
 local NO_WAY = { unreachable = true, offmesh = true, outside = true }
 
-local paths = {}            -- by goal: { key, continent, x, y, points, rest, id, reason, askedAt, from, used }
+local paths = {}            -- by goal: { key, continent, x, y, points, rest, id, reason, askedAt (when it was answered), from, used }
 local pending               -- the one search under way: { key, handle, at, continent, from, to }
 local pathId = 0            -- every path drawn has its own number
 local counts = { asked = 0, answered = 0 }
@@ -184,7 +184,9 @@ end
 -- The router answered the search `job`.
 local function Answered(job, points, cost, handle)
     local entry = Entry(job.key, job.to)
-    entry.askedAt, entry.from = job.at, job.from
+    -- The waits before asking again count from the answer: a search takes
+    -- seconds, and the player has moved on meanwhile.
+    entry.askedAt, entry.from = Now(), job.from
     local list = type(points) == "table" and Clean(points, job.to) or nil
     local answer = {
         continent = job.continent,
@@ -219,7 +221,7 @@ end
 -- A search that failed on our side of the router: said so, asked again later.
 local function Failed(job, reason)
     local entry = Entry(job.key, job.to)
-    entry.askedAt, entry.from, entry.reason = job.at, job.from, reason
+    entry.askedAt, entry.from, entry.reason = Now(), job.from, reason
     Remember({ continent = job.continent, reason = reason, from = job.from, to = job.to,
                straight = math.floor(Yards(job.from, job.to) + 0.5) })
     if ns.Log then ns.Log("walk: %s", reason) end
@@ -299,9 +301,12 @@ end
 -- under way is given up.
 function Walk.Use(target)
     local legs = target and target.legs
+    -- A trip gone through already is as it should be: the search it asked
+    -- for goes on.
+    if target and target.walked then return end
     local wanted = {}
     held = nil
-    if type(legs) == "table" and #legs > 0 and not target.walked then
+    if type(legs) == "table" and #legs > 0 then
         target.walked = true
         local engine = Engine()
         local speed = ns.Route.WALK_SPEED
@@ -318,7 +323,7 @@ function Walk.Use(target)
                 end
                 if path then
                     local straight = 0
-                    for at = index, last do straight = straight + legs[at].seconds end
+                    for at = index, last do straight = straight + (legs[at].seconds or 0) end
                     out[#out + 1] = {
                         kind = "walk", from = from, to = to, final = legs[last].final,
                         yards = yards, seconds = yards / speed, path = path, pathId = id, real = true,
