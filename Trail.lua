@@ -1,9 +1,12 @@
 local _, ns = ...
 
--- Draws the route on the world map and the minimap as a dotted line, with a
--- marker at each change of transport and at the hand-in. Uses the pin library
--- that Questie and TomTom load (HereBeDragons-Pins), never embedded here; with
--- neither loaded nothing is drawn.
+-- Draws the route: a line on the world map, dots on the minimap, and a marker
+-- at each change of transport and at the hand-in. The dots and markers use
+-- the pin library that Questie and TomTom load (HereBeDragons-Pins), never
+-- embedded here. The line is drawn on the world map's canvas itself: on
+-- OpenMap's stitched map through its API, on Blizzard's own through the
+-- coordinates of the map it shows. The world map keeps its dots under the
+-- line, so the trip still shows where the line cannot be drawn.
 local Trail = {}
 ns.Trail = Trail
 
@@ -19,6 +22,9 @@ local MINIMAP_REACH = 600       -- yards of walking drawn on the minimap, from t
 local REDRAW_YARDS = 60         -- the player moved this far: lay the first stretch again
 local NEAR_PLAYER = 15          -- no dots this close to the player
 
+local LINE_PX = 4               -- width of the line on screen
+local LINE_ALPHA = 0.9
+
 local COLOUR = {
     walk = { 1, 0.82, 0 },
     fly = { 0.45, 0.8, 1 },
@@ -28,6 +34,187 @@ local COLOUR = {
 local drawn             -- signature of what is on the maps now
 local pools = { world = {}, minimap = {} }
 local used = { world = 0, minimap = 0 }
+
+local overlay                   -- a frame over the world map's canvas, holding the lines
+local segments, usedSegments = {}, 0   -- { line, from, to }: one per stretch on one continent
+local wanted                    -- the stretches to draw as lines: { from, to, colour }
+local view                      -- what the last layout was made for; nil: lay out again
+local lineState = {}            -- how the last layout went, for the debug snapshot
+
+-- The world map and its canvas, when there is one to draw on.
+local function Canvas()
+    local map = rawget(_G, "WorldMapFrame")
+    if type(map) ~= "table" or type(map.GetCanvas) ~= "function" then return nil end
+    local ok, canvas = pcall(map.GetCanvas, map)
+    if not ok or type(canvas) ~= "table" then return nil end
+    return map, canvas
+end
+
+local function ShownMap(map)
+    local ok, mapId = pcall(map.GetMapID, map)
+    return ok and type(mapId) == "number" and mapId or nil
+end
+
+-- A world point on the canvas: x, y with 0..1 the map it shows, and beyond.
+-- Nil when the point cannot be placed on what the map shows.
+local function OnCanvas(map, point)
+    local api = rawget(_G, "OpenMapAPI")
+    if type(api) == "table" and type(api.CanvasFromWorldPos) == "function" then
+        local ok, x, y = pcall(api.CanvasFromWorldPos, point.continent, point.x, point.y)
+        if ok and type(x) == "number" and type(y) == "number" then return x, y end
+        -- On its stitched map only OpenMap knows where a point is: one it
+        -- cannot place is not drawn, rather than placed by another map's rule.
+        if type(api.IsStitched) == "function" then
+            local asked, stitched = pcall(api.IsStitched)
+            if asked and stitched then return nil end
+        end
+    end
+    return ns.Geo.OnShownMap(ShownMap(map), point.continent, point.x, point.y)
+end
+
+-- The frame level for the lines: among the map's pins, and over OpenMap's
+-- art, under the pins it lifts above that.
+local function Level(map, canvas)
+    local level = canvas:GetFrameLevel()
+    level = type(level) == "number" and level + 1 or 1
+    if type(map.GetPinFrameLevelsManager) == "function" then
+        local ok, manager = pcall(map.GetPinFrameLevelsManager, map)
+        if ok and type(manager) == "table" and type(manager.GetValidFrameLevel) == "function" then
+            local found, pinLevel = pcall(manager.GetValidFrameLevel, manager, "PIN_FRAME_LEVEL_AREA_POI", 1)
+            if found and type(pinLevel) == "number" then level = math.max(level, pinLevel) end
+        end
+    end
+    local api = rawget(_G, "OpenMapAPI")
+    if type(api) == "table" and type(api.ArtTopLevel) == "function" then
+        local ok, top = pcall(api.ArtTopLevel)
+        if ok and type(top) == "number" then level = math.max(level, top + 1) end
+    end
+    return level
+end
+
+local function HideLines()
+    for index = 1, usedSegments do segments[index].line:Hide() end
+    lineState.shown = 0
+end
+
+-- Puts every line where the map now shows its two ends, and hides those the
+-- map cannot place. Runs while the world map is open, and does the work only
+-- when the map, its size, its zoom or the place of the first point changed:
+-- the map under the canvas changes as the player moves around it.
+local function Place()
+    local map, canvas = Canvas()
+    if not map or not overlay or usedSegments == 0 then return end
+    local width, height = canvas:GetWidth(), canvas:GetHeight()
+    if type(width) ~= "number" or type(height) ~= "number" or width <= 0 or height <= 0 then
+        HideLines()
+        view = nil
+        return
+    end
+    -- The canvas grows with the zoom: the line keeps its width on screen.
+    local scale = 1
+    local mine = canvas:GetEffectiveScale()
+    local base = type(UIParent) == "table" and UIParent:GetEffectiveScale()
+    if type(mine) == "number" and type(base) == "number" and mine > 0 and base > 0 then scale = mine / base end
+
+    local mapId = ShownMap(map)
+    local firstX, firstY = OnCanvas(map, segments[1].from)
+    if view and view.mapId == mapId and view.width == width and view.height == height
+        and view.scale == scale and view.x == firstX and view.y == firstY then
+        return
+    end
+    view = { mapId = mapId, width = width, height = height, scale = scale, x = firstX, y = firstY }
+
+    local level = Level(map, canvas)
+    if level ~= overlay.level then
+        overlay:SetFrameLevel(level)
+        overlay.level = level
+    end
+
+    local thickness = LINE_PX / scale
+    local shown = 0
+    for index = 1, usedSegments do
+        local segment = segments[index]
+        local x1, y1 = firstX, firstY
+        if index > 1 then x1, y1 = OnCanvas(map, segment.from) end
+        local x2, y2 = OnCanvas(map, segment.to)
+        if x1 and x2 then
+            segment.line:SetStartPoint("TOPLEFT", overlay, x1 * width, -y1 * height)
+            segment.line:SetEndPoint("TOPLEFT", overlay, x2 * width, -y2 * height)
+            segment.line:SetThickness(thickness)
+            segment.line:Show()
+            shown = shown + 1
+        else
+            segment.line:Hide()
+        end
+    end
+    lineState.shown, lineState.level, lineState.scale = shown, level, scale
+    lineState.width, lineState.height, lineState.mapId = width, height, mapId
+end
+
+-- Never lets a drawing error reach the player: the lines go, the dots stay.
+-- The next route tries again.
+function Trail.Layout()
+    if lineState.error then return end
+    local ok, err = pcall(Place)
+    if not ok then
+        lineState.error = tostring(err)
+        pcall(HideLines)
+        if overlay then overlay:Hide() end
+        if ns.Log then ns.Log("trail line: %s", lineState.error) end
+    end
+end
+
+local function Overlay()
+    if overlay then return overlay end
+    local _, canvas = Canvas()
+    if not canvas or type(CreateFrame) ~= "function" then return nil end
+    local ok, frame = pcall(CreateFrame, "Frame", nil, canvas)
+    if not ok or type(frame) ~= "table" or type(frame.CreateLine) ~= "function" then return nil end
+    frame:SetAllPoints(canvas)
+    if frame.EnableMouse then frame:EnableMouse(false) end
+    frame:Hide()   -- shown while there are lines: its OnUpdate runs only then
+    frame:SetScript("OnUpdate", Trail.Layout)
+    overlay = frame
+    return overlay
+end
+
+-- One stretch of the trip as a line, placed by the next layout.
+local function Segment(from, to, colour)
+    local frame = Overlay()
+    if not frame then return end
+    local segment = segments[usedSegments + 1]
+    if not segment then
+        local ok, line = pcall(frame.CreateLine, frame, nil, "ARTWORK")
+        if not ok or type(line) ~= "table" then return end
+        segment = { line = line }
+        segments[usedSegments + 1] = segment
+    end
+    usedSegments = usedSegments + 1
+    segment.from, segment.to = from, to
+    segment.line:SetColorTexture(colour[1], colour[2], colour[3], LINE_ALPHA)
+    segment.line:Hide()
+end
+
+-- Makes the lines of the current route once the world map can take them: it
+-- may not exist yet when the route is first shown.
+local function Lines()
+    if not wanted or usedSegments > 0 or lineState.error then return end
+    for _, stretch in ipairs(wanted) do Segment(stretch[1], stretch[2], stretch[3]) end
+    if usedSegments > 0 then
+        view = nil
+        overlay:Show()
+        Trail.Layout()
+    end
+end
+
+-- The same route, the player a little further: the line starts where the
+-- player is now.
+local function Follow(legs)
+    local first = legs[1]
+    if usedSegments > 0 and first.from.continent == first.to.continent then
+        segments[1].from, view = first.from, nil
+    end
+end
 
 local function Pins()
     local stub = rawget(_G, "LibStub")
@@ -65,6 +252,9 @@ local function Style(dot, size, colour, texture)
 end
 
 function Trail.Clear()
+    pcall(HideLines)
+    usedSegments, wanted, view = 0, nil, nil
+    if overlay then overlay:Hide() end
     if not drawn then return end
     drawn = nil
     local pins = Pins()
@@ -108,10 +298,29 @@ function Trail.Show(legs)
         return
     end
     local signature = Signature(legs)
-    if signature == drawn then return end
+    if signature == drawn then
+        Lines()
+        Follow(legs)
+        return
+    end
     Trail.Clear()
+    if type(CreateFrame) ~= "function" then return end
+
+    -- The line: one stretch per leg that stays on one continent.
+    wanted, lineState.error = {}, nil
+    for _, leg in ipairs(legs) do
+        if leg.from.continent == leg.to.continent then
+            wanted[#wanted + 1] = { leg.from, leg.to, COLOUR[leg.kind] or COLOUR.ride }
+        end
+    end
+    Lines()
+
     local pins = Pins()
-    if not pins or type(CreateFrame) ~= "function" then return end
+    if not pins then
+        -- Nothing to lay the dots with: the trail is the line, if there is one.
+        drawn = usedSegments > 0 and signature or nil
+        return
+    end
     drawn = signature
 
     -- Spread the dot budget: long trips get wider gaps.
@@ -168,5 +377,6 @@ end
 
 -- For the debug snapshot and the tests.
 function Trail.State()
-    return { drawn = drawn ~= nil, world = used.world, minimap = used.minimap }
+    return { drawn = drawn ~= nil, world = used.world, minimap = used.minimap,
+             lines = usedSegments, line = lineState }
 end

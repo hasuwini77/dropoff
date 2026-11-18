@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.4.0
+
+- The trip is drawn as a solid line on the world map, on OpenMap's stitched map and on the game's own. The line keeps its width at any zoom.
+- The dots stay under the line on the world map for now, so the trip still shows if the line cannot be drawn. The minimap keeps its dots.
+
 ## 0.3.1
 
 - A walk now changes zone only where the zones join. Before, a trip could end with a walk in a straight line across a mountain range. The pass shows as a step of its own ("Walk on into the next zone: Desolace") and the line on the map goes through it.

@@ -215,6 +215,33 @@ local function OnMap(continent, gx, gy, mapId)
     return nil
 end
 
+local shownContinent, shownAsked = {}, {}
+
+-- A world point on a map, also when it lies outside it: x, y with 0..1 the
+-- map itself. Nil when the map shows another continent, or nothing can tell.
+function Geo.OnShownMap(mapId, continent, gx, gy)
+    if type(mapId) ~= "number" then return nil end
+    local shown = shownContinent[mapId]
+    if shown == nil or (shown == false and Clock() - shownAsked[mapId] >= RETRY) then
+        local _, _, found = Geo.World(mapId, 0.5, 0.5)
+        shown = found or false
+        shownContinent[mapId], shownAsked[mapId] = shown, Clock()
+    end
+    if shown ~= continent then return nil end
+    local hbd = HBD()
+    if hbd and hbd.GetZoneCoordinatesFromWorld then
+        local ok, x, y = pcall(hbd.GetZoneCoordinatesFromWorld, hbd, gy, gx, mapId, true)
+        if ok and Usable(x) and Usable(y) then return x, y end
+    end
+    if C_Map and C_Map.GetMapPosFromWorldPos and type(CreateVector2D) == "function" then
+        local _, position = Try(C_Map.GetMapPosFromWorldPos, continent, CreateVector2D(gx, gy), mapId)
+        if type(position) == "table" and Usable(position.x) and Usable(position.y) then
+            return position.x, position.y
+        end
+    end
+    return nil
+end
+
 local places = {}
 
 -- The map to show a world point on: the zone under it when the game can name
