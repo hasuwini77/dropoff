@@ -10,6 +10,7 @@
 # LICENSES/ShortestPathForever.txt, and list any new map part in the TOC of
 # its folder (the tests compare the TOCs with the folders).
 set -euo pipefail
+shopt -s nullglob   # a continent with no map part gives no pair, not a pattern taken as a file name
 
 TAG="v1.43.2"
 COMMIT="834cc7c"
@@ -66,4 +67,7 @@ while read -r from to; do
     fi
     count=$((count + 1))
 done < <(pairs)
+# A file left from an older version is in no pair: it would ship unchecked.
+extra="$(comm -13 <(pairs | cut -d' ' -f2 | sort) <(printf '%s\n' Router/*.lua DropOff_Paths_*/Nav*.lua | sort))"
+[ -z "$extra" ] || { echo "not in upstream's $TAG:"; echo "$extra"; exit 1; }
 echo "$count files are upstream's $TAG ($COMMIT) with the notice and the global's name"
