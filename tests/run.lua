@@ -104,7 +104,7 @@ local function Widget()
         lines[#lines + 1] = line
         return line
     end
-    function widget:Click() if self.scripts.OnClick then self.scripts.OnClick(self) end end
+    function widget:Click(button) if self.scripts.OnClick then self.scripts.OnClick(self, button) end end
     -- Anything else (SetPoint, SetSize, SetBackdrop...) is accepted and ignored.
     return setmetatable(widget, { __index = function() return function() end end })
 end
@@ -180,6 +180,7 @@ local function NewWorld()
         onTaxi = false,
         taxiNodes = nil,    -- what the open flight map lists: { { nodeID, state } }
         unplaced = {},      -- mapId -> true: the game cannot turn its points into world yards yet
+        minimap = true,     -- the game has a minimap to put the icon on
         mapPins = {},       -- icon -> where the trail put it on the world map
         minimapPins = {},
     }
@@ -212,6 +213,8 @@ local function InstallGlobals()
     issecretvalue = function(value) return value == SECRET end
     NUM_BAG_SLOTS = 4
     UIParent = Widget()
+    Minimap = world.minimap and Widget() or nil
+    DropOffMinimapButton = nil
     GameTooltip = Widget()
     DEFAULT_CHAT_FRAME = { AddMessage = function(_, text) world.chat[#world.chat + 1] = text end }
     SlashCmdList = {}
@@ -469,9 +472,11 @@ local function InstallGlobals()
     end
 end
 
--- Loads the addon files in TOC order against the current world.
-local function Load()
+-- Loads the addon files in TOC order against the current world. `saved`:
+-- the account's saved variables, as a reload would hand them back.
+local function Load(saved)
     InstallGlobals()
+    DropOffDB = saved
     local ns = {}
     for line in io.lines(ROOT .. "DropOff.toc") do
         local file = line:match("^([%w_]+%.lua)%s*$")
@@ -557,6 +562,14 @@ local function Scene()
         [60] = { name = "Courier", spawns = { [14] = { { 70, 50 } } } },
     }
     return world
+end
+
+-- Is this text one of the lines the window shows, in the size it is in?
+local function HasLabel(ns, text)
+    for _, line in ipairs(ns.UI.Lines(ns.state.plan, ns.UI.IsCompact())) do
+        if line.kind == "label" and line.text == text then return true end
+    end
+    return false
 end
 
 local function Titles(list)
@@ -986,6 +999,114 @@ test("slash commands", function()
     world.chat = {}
     SlashCmdList.DROPOFF("nonsense")
     check(ChatHas("/dropoff"), "help printed")
+end)
+
+test("the minimap icon opens and closes the window", function()
+    Scene()
+    local ns = Load()
+    check(DropOffMinimapButton ~= nil and DropOffMinimapButton:IsShown(), "the icon is there from the start, window closed")
+    check(not ns.IsOpen(), "and the window is not opened by it")
+    DropOffMinimapButton:Click("LeftButton")
+    check(ns.IsOpen(), "a click opens")
+    eq(#LiveWaypoints(), 1, "and the guidance starts")
+    DropOffMinimapButton:Click("LeftButton")
+    check(not ns.IsOpen(), "a second click closes")
+    eq(#LiveWaypoints(), 0, "and stops it")
+
+    DropOffFrame.close:Click()
+    DropOffMinimapButton:Click("LeftButton")
+    check(ns.IsOpen(), "after the cross, the icon is the way back in")
+
+    world.chat = {}
+    SlashCmdList.DROPOFF("minimap")
+    check(not DropOffMinimapButton:IsShown(), "/dropoff minimap hides the icon")
+    eq(DropOffDB.minimap.hide, true, "and that is remembered")
+    check(ChatHas("/dropoff minimap"), "saying how to bring it back")
+    SlashCmdList.DROPOFF("minimap")
+    check(DropOffMinimapButton:IsShown(), "and shows it again")
+
+    SlashCmdList.DROPOFF("debug")
+    local window = DropOffDB.snapshot.window
+    check(window.minimapIcon.made and window.minimapIcon.shown, "the snapshot says the icon is up")
+    eq(window.compact, false, "and which size the window has")
+end)
+
+test("a hidden minimap icon stays hidden after a reload, and no minimap is no error", function()
+    Scene()
+    local ns = Load({ minimap = { hide = true, angle = 45 } })
+    check(DropOffMinimapButton == nil, "not even made")
+    eq(DropOffDB.minimap.angle, 45, "its place is kept")
+    SlashCmdList.DROPOFF("minimap")
+    check(DropOffMinimapButton ~= nil and DropOffMinimapButton:IsShown(), "/dropoff minimap brings it back")
+
+    Scene()
+    world.minimap = false
+    ns = Load()
+    check(DropOffMinimapButton == nil, "no minimap: no icon")
+    ns.Toggle()
+    check(ns.IsOpen() and not ChatHas("error"), "and the window works all the same")
+end)
+
+test("the small window shows only the next hand-in, and keeps guiding", function()
+    Scene()
+    local ns = Load()
+    ns.Toggle()
+    local full = DropOffFrame.height
+    eq(#ns.UI.Rows(), 5, "the whole list first")
+    check(DropOffFrame.summary:IsShown(), "with its summary")
+
+    DropOffFrame.size:Click()
+    check(ns.IsOpen(), "the size button does not close the window")
+    eq(DropOffCharDB.compact, true, "the size is remembered for this character")
+    local rows = ns.UI.Rows()
+    eq(#rows, 1, "one row")
+    eq(rows[1].data.title, "Pelts", "the hand-in the arrow points at")
+    check(rows[1].data.current, "marked as the current one")
+    check(not DropOffFrame.summary:IsShown(), "no summary line")
+    check(DropOffFrame.height < full / 2, "much smaller: " .. DropOffFrame.height .. " against " .. full)
+    eq(#LiveWaypoints(), 1, "the arrow is still there")
+    check(HasLabel(ns, ns.L.MORE:format(3)), "and it says how many more are waiting")
+
+    Advance(10)
+    eq(#ns.UI.Rows(), 1, "still one row after the refreshes")
+
+    DropOffFrame.size:Click()
+    eq(DropOffCharDB.compact, false, "the same button brings the list back")
+    eq(#ns.UI.Rows(), 5, "every row again")
+    check(DropOffFrame.summary:IsShown(), "and the summary")
+    eq(DropOffFrame.height, full, "at its full height")
+end)
+
+test("the small window comes back small after a reload", function()
+    Scene()
+    local ns = Load()
+    DropOffCharDB.open, DropOffCharDB.compact = true, true
+    Fire(ns, "PLAYER_ENTERING_WORLD")
+    Advance(4)
+    check(ns.IsOpen(), "reopened")
+    eq(#ns.UI.Rows(), 1, "small")
+end)
+
+test("a right-click on the minimap icon switches the size, opening the window", function()
+    Scene()
+    local ns = Load()
+    DropOffMinimapButton:Click("RightButton")
+    check(ns.IsOpen(), "opened")
+    eq(#ns.UI.Rows(), 1, "small")
+    DropOffMinimapButton:Click("RightButton")
+    check(ns.IsOpen(), "still open")
+    eq(#ns.UI.Rows(), 5, "the whole list")
+    SlashCmdList.DROPOFF("mini")
+    eq(#ns.UI.Rows(), 1, "/dropoff mini does the same")
+end)
+
+test("the small window with nothing to turn in", function()
+    NewWorld()
+    local ns = Load()
+    DropOffCharDB.compact = true
+    ns.Toggle()
+    eq(#ns.UI.Rows(), 0, "no row")
+    check(HasLabel(ns, ns.L.SUMMARY_NONE:format(16)), "one line saying so")
 end)
 
 test("the window lists every section", function()
@@ -1625,6 +1746,23 @@ test("no pin library: the steps still show, nothing is drawn", function()
     check(HasText(LabelTexts(ns), "1. Fly to Undercity"), "steps listed")
     check(not ns.Trail.State().drawn, "nothing drawn")
     check(not ChatHas("error"), "and no error")
+end)
+
+test("the small window tells what to do now on a trip", function()
+    TravelScene()
+    local ns = Load()
+    DropOffCharDB.compact = true
+    ns.Toggle()
+    eq(#ns.UI.Rows(), 1, "one row")
+    check(HasLabel(ns, "Now: Fly to Undercity"), "the first step of the trip")
+    check(not HasLabel(ns, "  2. Go to the zeppelin: Undercity"), "not the others")
+    check(Count(world.mapPins) > 0, "the trip is still drawn on the map")
+
+    world.locale = "frFR"
+    ns = Load()
+    DropOffCharDB.compact = true
+    ns.Toggle()
+    check(HasLabel(ns, "Maintenant : Prends le vol pour Undercity"), "in French")
 end)
 
 test("French steps", function()
