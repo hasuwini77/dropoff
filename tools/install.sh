@@ -9,5 +9,5 @@ DEST="$WOW_DIR/_forever_/Interface/AddOns/DropOff"
 
 [ -d "$WOW_DIR/_forever_" ] || { echo "No _forever_ folder in $WOW_DIR"; exit 1; }
 mkdir -p "$DEST"
-rsync -a --delete --include '*.lua' --include '*.toc' --include 'LICENSE' --exclude '*' ./ "$DEST/"
+rsync -a --delete --include '*.lua' --include '*.toc' --include 'LICENSE' --include 'LICENSES/' --include 'LICENSES/*.txt' --exclude '*' ./ "$DEST/"
 echo "Installed to $DEST"
