@@ -2719,6 +2719,24 @@ test("nothing is asked in a fight", function()
     eq(#router.asks, 1, "and the walk is asked for")
 end)
 
+test("with the maps in memory, a new walk still waits for the end of a fight", function()
+    local router = Router()
+    local ns = PlateauScene(router)
+    router.Answer(ROUND)
+    Advance(6)
+    eq(#router.asks, 1, "one search so far")
+    world.combat = true
+    MovePlayer(-900, 133.6)
+    Advance(10)
+    eq(#router.asks, 1, "off the path in a fight: nothing is asked")
+    eq(ns.Walk.State().held, "combat", "the reason is kept")
+    check(Target(ns).legs[1].real, "the path there is still drawn")
+    world.combat = false
+    Advance(2)
+    eq(#router.asks, 2, "after the fight the new path is asked for")
+    eq(#world.loadCalls, 1, "with the maps already there")
+end)
+
 test("closing the window gives the search up", function()
     local router = Router()
     local ns = PlateauScene(router)
@@ -2998,6 +3016,32 @@ test("a lift that makes the walk longer is not taken", function()
     eq(leg.lift, nil, "with no lift")
     eq(#leg.path, #ROUND + 2, "its own points")
     check(not HasText(LabelTexts(ns), "take the lift"), "and the window speaks of none")
+end)
+
+test("with no way on foot, only a lift close to the straight line is tried", function()
+    -- At Hammerfall, far from the lifts of the Undercity: no way to the flight master.
+    TravelScene(HAMMERFALL[1] - 200, HAMMERFALL[2])
+    local router = Router()
+    world.engine, world.lifts = router, true
+    for name in pairs(MAP_ADDONS) do world.mapAddons[name] = true end
+    local ns = Load()
+    ns.Toggle()
+    eq(router.asks[1].map, 0, "a walk in the Eastern Kingdoms")
+    router.Answer("unreachable")
+    eq(#router.asks, 1, "no lift of the continent is searched")
+    eq(ns.Walk.State().answers[1].reason, "unreachable", "there is no way, and the snapshot says so")
+    eq(ns.Walk.State().answers[1].searches, 1, "after one search")
+
+    -- An end of the walk off the maps: the lift's two walks would have the same ends.
+    router = Router()
+    ns = PlateauScene(router, function() world.lifts = true end)
+    router.Answer("offmesh")
+    eq(#router.asks, 1, "beside a lift, but no lift is tried")
+    eq(ns.Walk.State().answers[1].reason, "offmesh", "the reason is the router's")
+    router = Router()
+    ns = PlateauScene(router, function() world.lifts = true end)
+    router.Answer("outside")
+    eq(#router.asks, 1, "nor for a place outside the maps")
 end)
 
 test("a lift is not searched beyond the point where it can no longer win", function()

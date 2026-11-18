@@ -21,7 +21,9 @@ local Try = ns.Try
 --
 -- A lift is not in the maps: its two ends are not joined. After the direct
 -- answer, the lifts that could make the walk shorter are tried, each one
--- entered at the top and at the bottom, and the shortest way is kept.
+-- entered at the top and at the bottom, and the shortest way is kept. When
+-- the router says there is no way, only a lift close to the straight line is
+-- tried: a lift serves the places round it.
 local Walk = {}
 ns.Walk = Walk
 
@@ -39,6 +41,7 @@ local ANSWERS_KEPT = 4      -- answers kept for the debug snapshot
 local LIFT_SECONDS = 20     -- a lift: the wait for it and the ride
 local LIFTS_TRIED = 2       -- lifts tried for one walk, the likeliest first
 local LIFT_NEAR = 15        -- yards: this close to a lift, the player has reached it
+local LIFT_DETOUR = 700     -- yards: with no way on foot, a lift further out of the way than this is not the way either
 local LOAD_RETRY = 60       -- seconds before maps that did not load are asked for again
 local SPAWN_REACH = 8       -- yards round a place in which a spawn gives it its height
 local CACHE_KB = 8192       -- the router's memory for decoded maps (its own default is 24 MB)
@@ -104,16 +107,15 @@ local function HasMaps(router, continent)
 end
 
 -- Are the walking maps of `continent` in memory? The first walk there loads
--- their addon, out of combat: reading them takes a moment. Maps that did not
--- load (the addon is disabled, or the game was not restarted since it was
--- installed) are asked for again later, not at every tick.
+-- their addon, which takes a moment (never in a fight: PathFor). Maps that
+-- did not load (the addon is disabled, or the game was not restarted since
+-- it was installed) are asked for again later, not at every tick.
 local function Maps(router, continent)
     if HasMaps(router, continent) then return true end
     local addon = MAPS[continent]
     if not addon then return false, "nodata" end
     local last = loads[continent]
     if last and Now() - last.at < LOAD_RETRY then return false, "nodata" end
-    if InCombat() then return false, "combat" end
     local state = { addon = addon, at = Now(), tries = (last and last.tries or 0) + 1 }
     loads[continent] = state
     local load = type(C_AddOns) == "table" and C_AddOns.LoadAddOn or rawget(_G, "LoadAddOn")
@@ -365,15 +367,17 @@ end
 -- The lifts that could make the walk of `job` shorter than its best way so
 -- far, the likeliest first, each one both ways: in at the top, in at the
 -- bottom. A lift is worth a try when the straight lines to it and on from it
--- are shorter than the best way, or when there is no way at all.
+-- are shorter than the best way. With no way at all, when they are not far
+-- longer than the straight line: a hand-in the maps cannot reach is not
+-- searched through every lift of the continent.
 local function LiftTries(job)
-    local best = job.best and job.best.cost
+    local best = job.best and job.best.cost or Yards(job.from, job.to) + LIFT_DETOUR + LiftYards()
     local worth = {}
     for _, lift in ipairs(type(ns.TravelLifts) == "table" and ns.TravelLifts or {}) do
         if lift[1] == job.continent then
             local spot = { x = lift[2], y = lift[3] }
             local bound = Yards(job.from, spot) + Yards(spot, job.to) + LiftYards()
-            if not best or bound < best then
+            if bound < best then
                 worth[#worth + 1] = { bound = bound, x = lift[2], y = lift[3], top = lift[4], bottom = lift[5] }
             end
         end
@@ -442,8 +446,9 @@ local function Ask(router, key, from, to)
             job.reason = reason or (points and "empty" or "error")
             job.direct = job.reason
         end
-        -- With no way straight there a lift may be the way; after an error it is not asked.
-        if list or NO_WAY[job.reason] then job.tries = LiftTries(job) end
+        -- With no way straight there a lift may be the way. Not when an end
+        -- of the walk is off the maps: the lift's two walks have the same ends.
+        if list or job.reason == "unreachable" then job.tries = LiftTries(job) end
         NextTry(job)
     end)
 end
@@ -479,7 +484,9 @@ local function PathFor(router, from, to, isPlayer, wanted)
     end
     if entry then entry.used = now end
     if ask and not pending then
-        local can, why = Maps(router, from.continent)
+        -- Nothing new in a fight: neither reading maps nor a search.
+        local can, why = not InCombat(), "combat"
+        if can then can, why = Maps(router, from.continent) end
         if can then Ask(router, key, Spot(from, isPlayer), Spot(to)) else held = why end
     end
     return path, yards, entry and entry.id, lift
