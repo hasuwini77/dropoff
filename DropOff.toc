@@ -22,4 +22,5 @@ TravelData.lua
 Route.lua
 Plan.lua
 Nav.lua
+Trail.lua
 UI.lua
