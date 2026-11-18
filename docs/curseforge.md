@@ -26,13 +26,13 @@ Publishing is free. It needs a CurseForge author account, which is why the proje
    `## X-Curse-Project-ID: <id>`
 2. Create an API token at https://authors.curseforge.com/#/settings/api-tokens and store it as a repo secret:
    `gh secret set CF_API_TOKEN --repo hasuwini77/dropoff`
-3. Set `## Version: 0.2.1` in the same file and add a `0.2.1` entry to `CHANGELOG.md`. The version shown in game comes from the TOC, not from the tag.
+3. Set `## Version: 0.2.2` in the same file and add a `0.2.2` entry to `CHANGELOG.md`. The version shown in game comes from the TOC, not from the tag.
 4. Commit, then tag and push:
-   `git tag v0.2.1 && git push origin v0.2.1`
+   `git tag v0.2.2 && git push origin v0.2.2`
 
 The release workflow runs the tests, builds `DropOff-<tag>.zip`, attaches it to a GitHub release and uploads it to CurseForge. The packager reads `## Interface: 16001` and files the upload under WoW Forever.
 
-The `v0.1.0` and `v0.2.0` tags were pushed before the workflows existed, so they have no zip. The first file on CurseForge is `v0.2.1`.
+Tags up to `v0.2.1` were pushed before the workflows existed, so they have no zip. The first file on CurseForge is `v0.2.2`.
 
 ## Summary (English)
 

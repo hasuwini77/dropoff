@@ -151,7 +151,9 @@ end
 local function Build()
     frame = CreateFrame("Frame", "DropOffFrame", UIParent, "BackdropTemplate")
     frame:SetSize(WIDTH, 100)
-    frame:SetFrameStrata("MEDIUM")
+    -- Below the world map and the other panels, like the quest tracker: a pin
+    -- at the edge of the map must not end up hidden behind this window.
+    frame:SetFrameStrata("LOW")
     frame:SetClampedToScreen(true)
     frame:SetMovable(true)
     frame:EnableMouse(true)

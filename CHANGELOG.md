@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.1
+
+- The window now sits below the world map, so it no longer hides a map pin near the edge.
+
 ## 0.2.0
 
 - Map button on each finished quest: heads there first and opens the world map on the hand-in zone.
