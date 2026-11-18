@@ -64,6 +64,8 @@ end
 -- Mock frames
 ---------------------------------------------------------------------------
 
+local lines = {}   -- the lines the trail made on the world map, reset with the world
+
 local function Widget()
     local widget = { scripts = {}, shown = true }
     function widget:SetScript(name, fn) self.scripts[name] = fn end
@@ -93,6 +95,15 @@ local function Widget()
     function widget:GetPoint() return "RIGHT", nil, "RIGHT", -140, 60 end
     function widget:CreateTexture() return Widget() end
     function widget:CreateFontString() return Widget() end
+    function widget:CreateLine()
+        local line = Widget()
+        function line:SetStartPoint(_, _, x, y) self.from = { x, y } end
+        function line:SetEndPoint(_, _, x, y) self.to = { x, y } end
+        function line:SetThickness(thickness) self.thickness = thickness end
+        function line:SetColorTexture(r, g, b, a) self.colour = { r, g, b, a } end
+        lines[#lines + 1] = line
+        return line
+    end
     function widget:Click() if self.scripts.OnClick then self.scripts.OnClick(self) end end
     -- Anything else (SetPoint, SetSize, SetBackdrop...) is accepted and ignored.
     return setmetatable(widget, { __index = function() return function() end end })
@@ -130,6 +141,7 @@ end
 local world
 
 local function NewWorld()
+    lines = {}
     world = {
         locale = "enUS",
         faction = "Horde",
@@ -361,9 +373,12 @@ local function InstallGlobals()
             if not map then return nil end
             return map.ox + x * map.size, map.oy + y * map.size, map.instance
         end
-        function hbd:GetZoneCoordinatesFromWorld(x, y, mapId)
+        function hbd:GetZoneCoordinatesFromWorld(x, y, mapId, anywhere)
             if not MAPS[mapId] then return nil end
-            return OnMap(mapId, y, x)
+            local zx, zy = OnMap(mapId, y, x)
+            -- As the library does: nothing outside the map unless asked for.
+            if not anywhere and (zx < 0 or zx > 1 or zy < 0 or zy > 1) then return nil end
+            return zx, zy
         end
         -- The pin library, recording what is on the maps.
         local pins = {}
@@ -1442,6 +1457,100 @@ test("the route is drawn on the map and cleared with the window", function()
     ns.Toggle()
     eq(Count(world.mapPins), 0, "closing the window clears the map")
     eq(Count(world.minimapPins), 0, "and the minimap")
+end)
+
+-- A world map with a canvas 1000 by 600, zoomed to twice the UI's scale.
+local function OpenWorldMap(mapId)
+    local canvas = Widget()
+    function canvas:GetWidth() return 1000 end
+    function canvas:GetHeight() return 600 end
+    function canvas:GetEffectiveScale() return 2 end
+    function canvas:GetFrameLevel() return 10 end
+    WorldMapFrame = { mapId = mapId }
+    function WorldMapFrame:GetCanvas() return canvas end
+    function WorldMapFrame:GetMapID() return self.mapId end
+    function UIParent:GetEffectiveScale() return 1 end
+    return canvas
+end
+
+local function ShownLines()
+    local out = {}
+    for _, line in ipairs(lines) do
+        if line.shown then out[#out + 1] = line end
+    end
+    return out
+end
+
+test("the trip is a line on the world map, on the map it shows", function()
+    TravelScene(HAMMERFALL[1] - 200, HAMMERFALL[2])
+    local ns = Load()
+    OpenWorldMap(1417)
+    ns.Toggle()
+    local legs = ns.state.plan.ready[1].target.legs
+    local sameContinent = 0
+    for _, leg in ipairs(legs) do
+        if leg.from.continent == leg.to.continent then sameContinent = sameContinent + 1 end
+    end
+    eq(ns.Trail.State().lines, sameContinent, "one line per stretch on one continent, none for the crossing")
+
+    -- The map shows Arathi: the stretches in the Eastern Kingdoms are on it.
+    local shown = ShownLines()
+    eq(#shown, 3, "the walk, the flight and the walk to the zeppelin")
+    local px, py = OnMap(1417, HAMMERFALL[1] - 200, HAMMERFALL[2])
+    local fx, fy = OnMap(1417, HAMMERFALL[1], HAMMERFALL[2])
+    local walk = shown[1]
+    check(math.abs(walk.from[1] - px * 1000) < 0.01 and math.abs(walk.from[2] + py * 600) < 0.01, "from the player")
+    check(math.abs(walk.to[1] - fx * 1000) < 0.01 and math.abs(walk.to[2] + fy * 600) < 0.01, "to the flight master")
+    eq(walk.thickness, 2, "four pixels on screen whatever the zoom")
+    eq(walk.colour[1], 1, "in the walk's colour")
+    local flight = shown[2]
+    check(flight.to[1] < 0 or flight.to[1] > 1000 or flight.to[2] > 0 or flight.to[2] < -600,
+        "a flight that leaves the zone runs off the map")
+    check(Count(world.mapPins) > 20, "the dots stay under the line")
+
+    -- The map moves to Ashenvale: the other continent's stretches show instead.
+    WorldMapFrame.mapId = 1440
+    ns.Trail.Layout()
+    eq(#ShownLines(), sameContinent - 3, "the stretches in Kalimdor")
+    eq(ns.Trail.State().line.shown, sameContinent - 3, "the state says how many")
+
+    ns.Toggle()
+    eq(#ShownLines(), 0, "closing the window takes the lines off")
+    WorldMapFrame = nil
+end)
+
+test("on OpenMap's stitched map the line uses its coordinates and sits over its art", function()
+    TravelScene(HAMMERFALL[1] - 200, HAMMERFALL[2])
+    local ns = Load()
+    OpenWorldMap(1417)
+    OpenMapAPI = {
+        major = 1,
+        IsStitched = function() return true end,
+        ArtTopLevel = function() return 2400 end,
+        -- Both continents on one canvas, as the stitched map has them.
+        CanvasFromWorldPos = function(continent, x, y) return continent + x / 100000, y / 100000 end,
+    }
+    ns.Toggle()
+    local lines = ShownLines()
+    eq(#lines, ns.Trail.State().lines, "every stretch is placed, on either continent")
+    check(math.abs(lines[1].to[1] - (HAMMERFALL[1] / 100000) * 1000) < 0.01, "by OpenMap's coordinates")
+    eq(ns.Trail.State().line.level, 2401, "just over the stitched art")
+    ns.Toggle()
+    OpenMapAPI, WorldMapFrame = nil, nil
+end)
+
+test("a world map that cannot take a line leaves the dots alone", function()
+    TravelScene(HAMMERFALL[1] - 200, HAMMERFALL[2])
+    local ns = Load()
+    local canvas = OpenWorldMap(1417)
+    function canvas:GetWidth() error("no canvas yet") end
+    ns.Toggle()
+    eq(#ShownLines(), 0, "no line")
+    check(ns.Trail.State().line.error ~= nil, "the reason is kept for the snapshot")
+    check(Count(world.mapPins) > 20, "the dots are there")
+    check(ns.Trail.State().drawn, "and the trail counts as drawn")
+    ns.Toggle()
+    WorldMapFrame = nil
 end)
 
 test("without TomTom the next stop is marked on the minimap rim", function()
