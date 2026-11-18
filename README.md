@@ -10,7 +10,7 @@ Built for **WoW Forever** (interface 16001). English and French.
 - Finds the finished quests, including deliveries that are ready the moment you accept them.
 - Sorts them: quests holding bag items first, quickest to reach first.
 - Plans the trip to the first one and lists it step by step: go to the flight master, fly, take the zeppelin or the boat, walk to the hand-in. Each trip comes with a time estimate.
-- Points the arrow at the next stop of the trip, and draws the trip as a line on the world map and as dots on the minimap.
+- Points the arrow at the next stop of the trip, and draws the trip as a line on the world map.
 - Hand the quest in and everything moves to the next one.
 - Also lists, without guidance for now:
   - quests in progress that hold items,
@@ -59,7 +59,7 @@ The snapshot holds your quest log, the quest items in your bags and where DropOf
 
 ## En français
 
-DropOff liste les quêtes déjà terminées, indique combien d'emplacements de sac chacune libère, et te guide vers la plus rapide à rendre d'abord. Sous la quête en cours, il affiche tout le trajet, étape par étape : rejoindre le maître de vol, prendre le vol, le zeppelin ou le bateau, puis finir à pied, avec une durée estimée. Le trajet est aussi tracé d'un trait sur la carte du monde et en pointillés sur la minicarte. Tape `/dropoff` ou clique sur l'icône de la minicarte pour ouvrir la fenêtre : tant qu'elle est ouverte, la flèche pointe vers la prochaine étape. Le bouton à gauche de la croix la réduit à la prochaine quête à rendre, sans arrêter le guidage. Questie donne les lieux, TomTom affiche la flèche (sinon c'est le repère de carte du jeu). Pour le trajet en cours, DropOff calcule lui-même le vrai chemin à pied : par les routes, en contournant les montagnes, en prenant l'ascenseur quand il le faut. Aucun autre addon n'est nécessaire. Les cartes de marche sont dans trois dossiers à part (`DropOff_Paths_*`), à laisser activés. Tant que le chemin n'est pas calculé, le trajet est une ligne droite, et la fenêtre le dit : « à vol d'oiseau ».
+DropOff liste les quêtes déjà terminées, indique combien d'emplacements de sac chacune libère, et te guide vers la plus rapide à rendre d'abord. Sous la quête en cours, il affiche tout le trajet, étape par étape : rejoindre le maître de vol, prendre le vol, le zeppelin ou le bateau, puis finir à pied, avec une durée estimée. Le trajet est aussi tracé d'un trait sur la carte du monde. Tape `/dropoff` ou clique sur l'icône de la minicarte pour ouvrir la fenêtre : tant qu'elle est ouverte, la flèche pointe vers la prochaine étape. Le bouton à gauche de la croix la réduit à la prochaine quête à rendre, sans arrêter le guidage. Questie donne les lieux, TomTom affiche la flèche (sinon c'est le repère de carte du jeu). Pour le trajet en cours, DropOff calcule lui-même le vrai chemin à pied : par les routes, en contournant les montagnes, en prenant l'ascenseur quand il le faut. Aucun autre addon n'est nécessaire. Les cartes de marche sont dans trois dossiers à part (`DropOff_Paths_*`), à laisser activés. Tant que le chemin n'est pas calculé, le trajet est une ligne droite, et la fenêtre le dit : « à vol d'oiseau ».
 
 ## Development
 
