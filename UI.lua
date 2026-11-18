@@ -262,6 +262,8 @@ local function DistanceLabel(target)
     -- A trip with a flight or a crossing is told in minutes, like the order
     -- of the list; a plain walk in yards.
     local trip = target.eta and target.legs and #target.legs > 1
+    -- One walk along a real path (Walk.lua): its yards, not the straight line's.
+    if target.walk and not trip then return L.DIST_YARDS:format(math.floor(target.walk + 0.5)) end
     if target.dist and not trip then return L.DIST_YARDS:format(math.floor(target.dist + 0.5)) end
     if target.eta then return L.ETA:format(math.max(1, math.floor(target.eta / 60 + 0.5))) end
     return target.far and L.DIST_FAR or ""
@@ -281,11 +283,16 @@ function UI.Lines(plan, compact)
         lines[#lines + 1] = { kind = "label", text = text, height = NOTE_HEIGHT, colour = colour }
     end
 
-    -- The trip to the current quest, one line per leg, when it is more than a walk.
+    -- The trip to the current quest, one line per leg. A plain walk is one
+    -- line: how far, and whether that is the real way or a straight line.
     local function route(quest)
         local target = quest.target
         local legs = target and target.legs
-        if not legs or #legs < 2 then return end
+        if not legs or #legs == 0 then return end
+        if #legs == 1 then
+            if legs[1].yards then note("  " .. ns.Route.StepText(legs, 1, target.name), GOLD) end
+            return
+        end
         note(L.ROUTE:format(ns.Route.TimeText(target.eta)), WHITE)
         -- On a flight or a crossing, the legs before it are behind the player.
         local first = ns.Route.FirstLeg(legs, plan.carried) or 1
@@ -328,7 +335,7 @@ function UI.Lines(plan, compact)
         readyRow(shown)
         local target = shown.target
         local legs = target and target.legs
-        if legs and #legs > 1 then
+        if legs and (#legs > 1 or (legs[1] and legs[1].yards)) then
             local first = ns.Route.FirstLeg(legs, plan.carried) or 1
             note(L.COMPACT_STEP:format(ns.Route.StepText(legs, first, target.name)), GOLD)
             -- A flight taken on trust is said so here too, whichever step it is.
