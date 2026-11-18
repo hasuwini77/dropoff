@@ -18,6 +18,8 @@ Locales.lua
 Core.lua
 Data.lua
 Geo.lua
+TravelData.lua
+Route.lua
 Plan.lua
 Nav.lua
 UI.lua
