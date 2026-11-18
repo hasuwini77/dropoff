@@ -332,17 +332,38 @@ end
 
 -- Where the player has to be next: the end of a walk, else the flight master
 -- or dock they are standing at. In the air (`flying`), where the flight lands.
-function Route.NextPlace(legs, flying)
-    local first = legs and legs[1]
+-- `carried` ("fly" on a flight path, "ride" on a boat, zeppelin or airship)
+-- means the plan dates from before boarding: the place is where it lands.
+function Route.NextPlace(legs, carried)
+    local first = legs and legs[Route.FirstLeg(legs, carried)]
     if not first then return nil end
-    if flying then
-        -- The plan dates from before take-off: the flight is its first "fly" leg.
-        for _, leg in ipairs(legs) do
-            if leg.kind == "fly" then return leg.to end
+    if carried or first.kind == "walk" then return first.to end
+    return first.from
+end
+
+local NEAR_DOCK = 150   -- yards: just stepped off the platform, onto the vessel
+
+-- Does the trip start with a crossing the player is at, or has just boarded?
+function Route.AtCrossing(legs)
+    local first, second = legs and legs[1], legs and legs[2]
+    if not first then return false end
+    if RIDE[first.kind] then return true end
+    return first.kind == "walk" and first.to.dock == true and first.yards < NEAR_DOCK
+        and second ~= nil and RIDE[second.kind] ~= nil
+end
+
+-- Index of the leg the player is on: 1, or while carried the first flight or
+-- crossing of the plan (the walk to it is behind them). Nil when the plan has
+-- no such leg.
+function Route.FirstLeg(legs, carried)
+    if not legs then return nil end
+    if not carried then return legs[1] and 1 or nil end
+    for index, leg in ipairs(legs) do
+        if (carried == "fly" and leg.kind == "fly") or (carried == "ride" and RIDE[leg.kind]) then
+            return index
         end
     end
-    if first.kind == "walk" then return first.to end
-    return first.from
+    return nil
 end
 
 ---------------------------------------------------------------------------

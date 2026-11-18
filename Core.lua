@@ -20,6 +20,7 @@ local LOG_MAX = 200
 local ALERT_EVERY = 300     -- seconds between bag hints
 local ANNOUNCE_EVERY = 5    -- seconds between "next turn-in" lines
 local TICK = 1.5            -- distance refresh while the window is open
+local RIDE_SPEED = 22       -- yards a second: faster than any mount, so a boat or a zeppelin
 
 ---------------------------------------------------------------------------
 -- Small helpers shared by every module
@@ -111,24 +112,27 @@ end
 -- Where the arrow points for this quest and what it says: the next place of
 -- the trip when it has several legs (a flight master, a dock), else the
 -- hand-in itself.
-local function NextStop(quest, label, flying)
+local function NextStop(quest, label, carried)
     local legs = quest.target.legs
-    if legs and #legs > 1 then
-        local place = ns.Route.NextPlace(legs, flying)
+    local first = legs and #legs > 1 and ns.Route.FirstLeg(legs, carried)
+    if first and not legs[first].final then
+        local place = ns.Route.NextPlace(legs, carried)
         local mapId, x, y = ns.Geo.Place(place.continent, place.x, place.y)
         if mapId then
-            return { mapId = mapId, x = x, y = y }, ns.Route.StepText(legs, 1, quest.target.name, true)
+            -- The hand-in keeps a pin of its own while the arrow is on a stop.
+            return { mapId = mapId, x = x, y = y }, ns.Route.StepText(legs, first, quest.target.name, true),
+                quest.target, label
         end
     end
     return quest.target, label
 end
 
-local function UpdateGuidance(plan, flying)
+local function UpdateGuidance(plan, carried)
     local quest = PickTarget(plan)
     plan.current = quest and quest.id or nil
     if quest then
         local label = quest.target.name and (quest.title .. " (" .. quest.target.name .. ")") or quest.title
-        ns.Nav.Set(NextStop(quest, label, flying))
+        ns.Nav.Set(NextStop(quest, label, carried))
         ns.Trail.Show(quest.target.legs)
         local now = Now()
         if ns.state.announcedQuest ~= quest.id and now - ns.state.lastAnnounce >= ANNOUNCE_EVERY then
@@ -159,12 +163,61 @@ local function OnFlight()
     return not ns.Secret(flying) and flying == true
 end
 
+local lastSpot, lastRiding = nil, false
+
+-- Moving faster than any mount without being on a flight path: on a boat, a
+-- zeppelin or an airship.
+local function OnRide()
+    ns.Geo.BeginPass()
+    local x, y, continent = ns.Geo.PlayerWorld()
+    if not x then
+        lastSpot, lastRiding = nil, false
+        return false
+    end
+    local now, spot = Now(), lastSpot
+    if spot and spot.continent == continent then
+        local elapsed = now - spot.at
+        if elapsed < 0.2 then return lastRiding end   -- too short to measure
+        local dx, dy = x - spot.x, y - spot.y
+        lastRiding = math.sqrt(dx * dx + dy * dy) / elapsed > RIDE_SPEED
+    else
+        lastRiding = false
+    end
+    lastSpot = { x = x, y = y, continent = continent, at = now }
+    return lastRiding
+end
+
+-- "fly" or "ride" while something carries the player along a leg of the
+-- current trip, else nil.
+local function Carried()
+    local carried
+    if OnFlight() then
+        carried, lastSpot, lastRiding = "fly", nil, false
+    elseif OnRide() then
+        carried = "ride"
+    end
+    local plan = ns.state.plan
+    if not carried or not plan then return nil end
+    for _, quest in ipairs(plan.ready) do
+        if quest.id == plan.current then
+            local legs = quest.target and quest.target.legs
+            if not ns.Route.FirstLeg(legs, carried) then return nil end
+            -- Speed alone is not proof of a crossing: the trip must have been
+            -- at its dock when it was planned.
+            if carried == "ride" and not ns.Route.AtCrossing(legs) then return nil end
+            return carried
+        end
+    end
+    return nil
+end
+
 function ns.Refresh()
-    -- On a flight path the route is the one chosen at take-off: planning from
-    -- mid-air would send the player back to a flight master.
-    local flying = OnFlight() and ns.state.plan ~= nil
+    -- While a flight or a crossing carries the player, the trip is the one
+    -- chosen before boarding: planning from mid-air or mid-sea would send the
+    -- player back to where they left.
+    local carried = Carried()
     local ok, plan = true, ns.state.plan
-    if not flying then ok, plan = pcall(ns.Plan.Build) end
+    if not carried then ok, plan = pcall(ns.Plan.Build) end
     if not ok then
         ns.Log("plan error: %s", tostring(plan))
         if not reportedError then
@@ -174,9 +227,10 @@ function ns.Refresh()
         return nil
     end
     ns.state.plan = plan
+    plan.carried = carried
     if ns.IsOpen() then
         local ok2, err = pcall(function()
-            UpdateGuidance(plan, flying)
+            UpdateGuidance(plan, carried)
             ns.UI.Render(plan)
         end)
         if not ok2 then
@@ -186,7 +240,7 @@ function ns.Refresh()
                 ns.Print("error: " .. tostring(err))
             end
         end
-    elseif not flying then
+    elseif not carried then
         MaybeAlert(plan)
     end
     return plan

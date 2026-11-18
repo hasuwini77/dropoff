@@ -250,10 +250,12 @@ function UI.Lines(plan)
         local legs = target and target.legs
         if not legs or #legs < 2 then return end
         note(L.ROUTE:format(ns.Route.TimeText(target.eta)), WHITE)
+        -- On a flight or a crossing, the legs before it are behind the player.
+        local first = ns.Route.FirstLeg(legs, plan.carried) or 1
         local assumed = false
-        for index = 1, math.min(#legs, MAX_STEPS) do
+        for index = first, math.min(#legs, first + MAX_STEPS - 1) do
             local text = ns.Route.StepText(legs, index, target.name)
-            note("  " .. L.STEP:format(index, text), index == 1 and GOLD or SOFT)
+            note("  " .. L.STEP:format(index - first + 1, text), index == first and GOLD or SOFT)
             assumed = assumed or legs[index].assumed
         end
         if assumed then note("  " .. L.ROUTE_ASSUMED) end
