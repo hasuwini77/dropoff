@@ -7,7 +7,7 @@
 ## IconTexture: Interface\Icons\INV_Misc_Bag_08
 ## Category: Quests
 ## Category-frFR: Quêtes
-## OptionalDeps: Questie, QuestieDB, TomTom, OpenMap
+## OptionalDeps: Questie, QuestieDB, TomTom, OpenMap, Polestar
 ## SavedVariables: DropOffDB
 ## SavedVariablesPerCharacter: DropOffCharDB
 ## AddonCompartmentFunc: DropOff_OnAddonCompartmentClick
@@ -21,6 +21,7 @@ Geo.lua
 TravelData.lua
 Passes.lua
 Route.lua
+Walk.lua
 Plan.lua
 Nav.lua
 Trail.lua

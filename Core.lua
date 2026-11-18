@@ -132,6 +132,10 @@ end
 local function UpdateGuidance(plan, carried)
     local quest = PickTarget(plan)
     plan.current = quest and quest.id or nil
+    -- The real walks of this trip only, and after the list was put in order:
+    -- the order compares straight lines with straight lines. While something
+    -- carries the player the trip is the one made before boarding.
+    if not carried then ns.Walk.Use(quest and quest.target) end
     if quest then
         local label = quest.target.name and (quest.title .. " (" .. quest.target.name .. ")") or quest.title
         ns.Nav.Set(NextStop(quest, label, carried))
@@ -271,6 +275,7 @@ end
 function ns.OnHidden()
     DropOffCharDB.open = false
     if ticker then ticker:Cancel(); ticker = nil end
+    ns.Walk.Stop()
     ns.Nav.Clear()
     ns.Trail.Clear()
     ns.state.pinned = nil

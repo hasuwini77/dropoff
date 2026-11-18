@@ -9,6 +9,7 @@ local Route = {}
 ns.Route = Route
 
 local WALK_SPEED = 7        -- yards a second on foot
+Route.WALK_SPEED = WALK_SPEED
 local DETOUR = 1.3          -- roads are longer than straight lines
 local FLY_SPEED = 30        -- yards a second on a flight path
 local RIDE_SECONDS = 240    -- a boat, zeppelin or airship: the wait plus the crossing
