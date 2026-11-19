@@ -135,6 +135,7 @@ local player = {}
 local function Usable(value)
     return value ~= nil and not Secret(value) and type(value) == "number"
 end
+Geo.Number = Usable   -- a number the addon may read and count with
 
 function Geo.BeginPass()
     player = {}

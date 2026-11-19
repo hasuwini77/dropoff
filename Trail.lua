@@ -226,9 +226,7 @@ end
 -- The line on the minimap
 ---------------------------------------------------------------------------
 
-local function Number(value)
-    return type(value) == "number" and not ns.Secret(value)
-end
+local Number = ns.Geo.Number
 
 local function MiniHide(why)
     -- Every line made, not only those counted: a placing may have stopped
