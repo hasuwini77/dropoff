@@ -2051,6 +2051,14 @@ test("the walk is a yellow line on the minimap, from the player to the rim", fun
     eq(mini[1].colour[1], 1, "yellow")
     eq(mini[1].colour[2], 0.82, "as on the world map")
     for _, pin in pairs(world.minimapPins) do check(pin.edge, "and no dot on the minimap") end
+
+    -- A hundred and fifty yards on: what was too far to matter now shows.
+    world.player.x, world.player.y = OnMap(1417, HAMMERFALL[1] - 50, HAMMERFALL[2])
+    ns.Trail.MiniLayout()
+    eq(#MiniLines(), 2, "near the flight master, the flight's line is there too")
+    world.player.x, world.player.y = OnMap(1417, HAMMERFALL[1] - 200, HAMMERFALL[2])
+    ns.Trail.MiniLayout()
+    eq(#MiniLines(), 1, "and gone again further back")
     local state = ns.Trail.State().miniLine
     eq(state.shown, 1, "the snapshot counts it")
     eq(state.source, "api", "and says where the view radius comes from")
@@ -2176,6 +2184,44 @@ test("a minimap that cannot take a line keeps its marker, and the world map keep
     check(not ChatHas("error"), "and the player saw no error")
     ns.Toggle()
     WorldMapFrame = nil
+end)
+
+test("a minimap whose frame cannot be made: the world map still gets its line", function()
+    MinimapScene(100, HAMMERFALL[1] - 200, HAMMERFALL[2])
+    local ns = Load()
+    OpenWorldMap(1417)
+    function Minimap:GetWidth() error("not a minimap any more") end
+    local make = CreateFrame
+    CreateFrame = function(kind, name, parent)
+        local frame = make(kind, name, parent)
+        if parent == Minimap then function frame:SetAllPoints() error("no anchor") end end
+        return frame
+    end
+    ns.Toggle()
+    check(ns.Trail.State().miniLine.error ~= nil, "the reason is kept")
+    check(ns.Trail.State().lines > 0 and #ShownLines() > 0, "the world map has its line")
+    check(not ns.Trail.State().dotted, "and no dots")
+    check(not ChatHas("error"), "and the player saw no error")
+    ns.Toggle()
+    WorldMapFrame = nil
+end)
+
+test("a path that comes back near itself: the minimap line does not jump ahead", function()
+    MinimapScene(100, HAMMERFALL[1] - 200, HAMMERFALL[2])
+    local ns = Load()
+    ns.Toggle()
+    local at = Now(ns)
+    local function Point(north, east) return { continent = at.continent, x = at.x + north, y = at.y - east } end
+    -- North forty yards, a few yards east, and back south beside the way up.
+    local path = { Point(0, 0), Point(40, 0), Point(40, 6), Point(-20, 6) }
+    ns.Trail.Show({ { kind = "walk", from = path[1], to = path[4], path = path, pathId = 2, final = true } })
+    world.player.x, world.player.y = OnMap(1417, at.x + 10, at.y - 4)
+    ns.Trail.MiniLayout()
+    local mini = MiniLines()
+    local px, py = PinOnMinimap(Now(ns), path[2], 100, nil, 70)
+    check(Near(mini[1].to[1], px) and Near(mini[1].to[2], py),
+        "nearer to the way back than to the way up, the line still goes to the first turn")
+    ns.Toggle()
 end)
 
 test("along a real path the minimap line starts at the turn ahead, not at one already passed", function()
