@@ -208,6 +208,7 @@ local function Widget()
         function line:SetEndPoint(_, _, x, y) self.to = { x, y } end
         function line:SetThickness(thickness) self.thickness = thickness end
         function line:SetColorTexture(r, g, b, a) self.colour = { r, g, b, a } end
+        line.owner = self
         lines[#lines + 1] = line
         return line
     end
@@ -297,6 +298,12 @@ local function NewWorld()
         taxiNodes = nil,    -- what the open flight map lists: { { nodeID, state } }
         unplaced = {},      -- mapId -> true: the game cannot turn its points into world yards yet
         minimap = true,     -- the game has a minimap to put the icon on
+        minimapSize = nil,  -- its width and height; nil: it has no size yet
+        viewRadius = nil,   -- yards it shows round the player, from C_Minimap; nil: the client has no such call
+        zoom = 0,
+        indoors = false,
+        cvars = {},
+        facing = nil,       -- the player's facing, radians from north, counter-clockwise
         mapPins = {},       -- icon -> where the trail put it on the world map
         minimapPins = {},
     }
@@ -360,6 +367,15 @@ local function InstallGlobals()
     NUM_BAG_SLOTS = 4
     UIParent = Widget()
     Minimap = world.minimap and Widget() or nil
+    if Minimap and world.minimapSize then
+        function Minimap:GetWidth() return world.minimapSize end
+        function Minimap:GetHeight() return world.minimapSize end
+        function Minimap:GetZoom() return world.zoom or 0 end
+    end
+    C_Minimap = world.viewRadius and { GetViewRadius = function() return world.viewRadius end } or nil
+    GetCVar = function(name) return world.cvars[name] end
+    GetPlayerFacing = function() return world.facing end
+    IsIndoors = function() return world.indoors or false end
     DropOffMinimapButton = nil
     GameTooltip = Widget()
     DEFAULT_CHAT_FRAME = { AddMessage = function(_, text) world.chat[#world.chat + 1] = text end }
@@ -378,8 +394,9 @@ local function InstallGlobals()
         end,
     }
 
-    CreateFrame = function(_, name)
+    CreateFrame = function(_, name, parent)
         local frame = Widget()
+        frame.parent = parent
         if name then _G[name] = frame end
         return frame
     end
@@ -1973,6 +1990,264 @@ test("without TomTom the next stop is marked on the minimap rim", function()
     end
     eq(rim, 1, "one marker that stays on the rim")
     eq(world.userWaypoint.uiMapID, 1417, "and the game's map pin is on the flight master")
+end)
+
+---------------------------------------------------------------------------
+-- The line on the minimap
+---------------------------------------------------------------------------
+
+-- A minimap 140 across showing `radius` yards round the player.
+local function MinimapScene(radius, gx, gy)
+    TravelScene(gx, gy)
+    world.minimapSize, world.viewRadius = 140, radius
+end
+
+local function MiniLines()
+    local out = {}
+    for _, line in ipairs(lines) do
+        if line.shown and line.owner.parent == Minimap then out[#out + 1] = line end
+    end
+    return out
+end
+
+-- Where HereBeDragons-Pins puts a point on the minimap: its drawMinimapPin,
+-- line for line, in its own axes (x is the game's y, y the game's x), for a
+-- minimap `half` wide from its centre. What the line is checked against.
+local function PinOnMinimap(player, point, radius, facing, half)
+    local xDist, yDist = player.y - point.y, player.x - point.x
+    if facing then
+        local dx, dy = xDist, yDist
+        xDist = dx * math.cos(facing) - dy * math.sin(facing)
+        yDist = dx * math.sin(facing) + dy * math.cos(facing)
+    end
+    local diffX, diffY = xDist / radius, yDist / radius
+    return diffX * half, -diffY * half
+end
+
+local function Near(a, b) return type(a) == "number" and math.abs(a - b) < 0.01 end
+
+local function Now(ns)
+    local x, y, continent = ns.Geo.PlayerNow()
+    return { x = x, y = y, continent = continent }
+end
+
+test("the walk is a yellow line on the minimap, from the player to the rim", function()
+    MinimapScene(100, HAMMERFALL[1] - 200, HAMMERFALL[2])
+    world.tomtom = false
+    local ns = Load()
+    ns.Toggle()
+    local leg = ns.state.plan.ready[1].target.legs[1]
+    eq(leg.kind, "walk", "the trip starts with a walk")
+    local mini = MiniLines()
+    eq(#mini, 1, "one line: the rest of the trip is out of sight")
+    local px, py = PinOnMinimap(Now(ns), leg.to, 100, nil, 70)
+    local far = math.sqrt(px * px + py * py)
+    check(far > 70, "the flight master is beyond the minimap")
+    check(Near(mini[1].to[1], px / far * 63) and Near(mini[1].to[2], py / far * 63),
+        "it stops at the rim, toward where the pin library puts the flight master")
+    check(Near(mini[1].from[1], px / far * 7) and Near(mini[1].from[2], py / far * 7),
+        "and starts clear of the player's arrow")
+    check(mini[1].to[2] > 60 and math.abs(mini[1].to[1]) < 1, "north of the player is up")
+    eq(mini[1].colour[1], 1, "yellow")
+    eq(mini[1].colour[2], 0.82, "as on the world map")
+    for _, pin in pairs(world.minimapPins) do check(pin.edge, "and no dot on the minimap") end
+
+    -- A hundred and fifty yards on: what was too far to matter now shows.
+    world.player.x, world.player.y = OnMap(1417, HAMMERFALL[1] - 50, HAMMERFALL[2])
+    ns.Trail.MiniLayout()
+    eq(#MiniLines(), 2, "near the flight master, the flight's line is there too")
+    world.player.x, world.player.y = OnMap(1417, HAMMERFALL[1] - 200, HAMMERFALL[2])
+    ns.Trail.MiniLayout()
+    eq(#MiniLines(), 1, "and gone again further back")
+    local state = ns.Trail.State().miniLine
+    eq(state.shown, 1, "the snapshot counts it")
+    eq(state.source, "api", "and says where the view radius comes from")
+    eq(state.radius, 100, "and what it is")
+    check(Near(state.own[1], px / far * 63) and Near(state.own[2], py / far * 63),
+        "and where the next stop's marker should be, to compare with where the library put it")
+    ns.Toggle()
+    eq(#MiniLines(), 0, "closing takes the line off")
+end)
+
+test("a stop within the minimap: the line ends on it and the next leg leaves from it", function()
+    MinimapScene(100, HAMMERFALL[1] - 50, HAMMERFALL[2])
+    local ns = Load()
+    ns.Toggle()
+    local legs = ns.state.plan.ready[1].target.legs
+    local mini = MiniLines()
+    local px, py = PinOnMinimap(Now(ns), legs[1].to, 100, nil, 70)
+    eq(ns.Nav.Mode(), "tomtom", "TomTom has the arrow")
+    check(Near(mini[1].to[1], px) and Near(mini[1].to[2], py), "the walk ends where the pin library puts the flight master")
+    eq(legs[2].kind, "fly", "then a flight")
+    check(Near(mini[2].from[1], px) and Near(mini[2].from[2], py), "its line leaves from there")
+    check(Near(math.sqrt(mini[2].to[1] ^ 2 + mini[2].to[2] ^ 2), 63), "and runs to the rim")
+    eq(mini[2].colour[3], 1, "in the colour of a flight")
+
+    -- Between two refreshes of the plan the player walks on: the line follows.
+    world.player.x, world.player.y = OnMap(1417, HAMMERFALL[1] - 30, HAMMERFALL[2])
+    ns.Trail.MiniLayout()
+    mini = MiniLines()
+    px, py = PinOnMinimap(Now(ns), legs[1].to, 100, nil, 70)
+    check(Near(py, 21), "twenty yards on, the flight master is thirty yards ahead")
+    check(Near(mini[1].to[1], px) and Near(mini[1].to[2], py), "and the line ends on it still")
+    check(Near(mini[1].from[2], 7), "from the player still")
+    ns.Toggle()
+end)
+
+test("a minimap that turns with the player: the line turns with it", function()
+    MinimapScene(100, HAMMERFALL[1] - 50, HAMMERFALL[2] + 30)
+    world.cvars.rotateMinimap = "1"
+    world.facing = 2.1
+    local ns = Load()
+    ns.Toggle()
+    local leg = ns.state.plan.ready[1].target.legs[1]
+    local mini = MiniLines()
+    local px, py = PinOnMinimap(Now(ns), leg.to, 100, 2.1, 70)
+    local flat = { PinOnMinimap(Now(ns), leg.to, 100, nil, 70) }
+    check(not Near(px, flat[1]), "turned: not where a fixed minimap has it")
+    check(Near(mini[1].to[1], px) and Near(mini[1].to[2], py), "where the pin library puts the flight master")
+    check(ns.Trail.State().miniLine.turned, "the snapshot says the minimap turns")
+
+    world.facing = nil
+    ns.Trail.MiniLayout()
+    eq(#MiniLines(), 0, "facing unknown: no line rather than a wrong one")
+    eq(ns.Trail.State().miniLine.why, "facing", "the snapshot says why")
+    eq(ns.Trail.State().miniLine.error, nil, "and that is no error")
+    world.facing = 0
+    ns.Trail.MiniLayout()
+    px, py = PinOnMinimap(Now(ns), leg.to, 100, 0, 70)
+    check(Near(MiniLines()[1].to[1], px) and Near(MiniLines()[1].to[2], py), "known again: the line is back")
+    ns.Toggle()
+end)
+
+test("a client without the view radius call: the zoom says how far the minimap shows", function()
+    MinimapScene(nil, HAMMERFALL[1] - 50, HAMMERFALL[2])
+    world.zoom = 5
+    local ns = Load()
+    ns.Toggle()
+    local leg = ns.state.plan.ready[1].target.legs[1]
+    local state = ns.Trail.State().miniLine
+    eq(state.source, "outdoor", "outdoors")
+    check(Near(state.radius, (133 + 1 / 3) / 2), "the outdoor view at the closest zoom")
+    local _, py = PinOnMinimap(Now(ns), leg.to, (133 + 1 / 3) / 2, nil, 70)
+    check(Near(MiniLines()[1].to[2], py), "the line is to that scale")
+
+    world.indoors, world.zoom = true, 0
+    ns.Trail.MiniLayout()
+    state = ns.Trail.State().miniLine
+    eq(state.source, "indoor", "indoors")
+    eq(state.radius, 150, "the indoor view")
+    ns.Toggle()
+end)
+
+test("a position the game keeps secret: no minimap line, and no error", function()
+    MinimapScene(100, HAMMERFALL[1] - 50, HAMMERFALL[2])
+    local ns = Load()
+    ns.Toggle()
+    check(#MiniLines() > 0, "a line")
+    world.secretPosition = true
+    ns.Trail.MiniLayout()
+    eq(#MiniLines(), 0, "gone")
+    eq(ns.Trail.State().miniLine.why, "position", "the snapshot says why")
+    eq(ns.Trail.State().miniLine.error, nil, "no error")
+    world.secretPosition = false
+    ns.Trail.MiniLayout()
+    check(#MiniLines() > 0, "back with the position")
+    check(not ChatHas("error"), "nothing reached the player")
+    ns.Toggle()
+end)
+
+test("a minimap that cannot take a line keeps its marker, and the world map keeps its line", function()
+    MinimapScene(100, HAMMERFALL[1] - 200, HAMMERFALL[2])
+    world.tomtom = false
+    local ns = Load()
+    OpenWorldMap(1417)
+    local asked = 0
+    function Minimap:GetWidth() asked = asked + 1; error("no minimap yet") end
+    ns.Toggle()
+    local legs = #ns.state.plan.ready[1].target.legs
+    eq(#MiniLines(), 0, "no line on the minimap")
+    check(ns.Trail.State().miniLine.error ~= nil, "the reason is kept for the snapshot")
+    check(not ns.Trail.State().dotted, "the world map is not laid as dots for it")
+    check(ns.Trail.State().lines > 0 and #ShownLines() > 0, "it keeps its line")
+    eq(Count(world.mapPins), legs, "and has the markers only")
+    local rim = 0
+    for _, pin in pairs(world.minimapPins) do
+        if pin.edge then rim = rim + 1 end
+    end
+    eq(rim, 1, "the next stop is still marked on the minimap")
+    asked = 0
+    world.player.x, world.player.y = OnMap(1417, HAMMERFALL[1] - 100, HAMMERFALL[2])
+    Advance(4)
+    ns.Trail.MiniLayout()
+    eq(asked, 0, "further along the same trip it is not tried again")
+    check(not ChatHas("error"), "and the player saw no error")
+    ns.Toggle()
+    WorldMapFrame = nil
+end)
+
+test("a minimap whose frame cannot be made: the world map still gets its line", function()
+    MinimapScene(100, HAMMERFALL[1] - 200, HAMMERFALL[2])
+    local ns = Load()
+    OpenWorldMap(1417)
+    function Minimap:GetWidth() error("not a minimap any more") end
+    local make = CreateFrame
+    CreateFrame = function(kind, name, parent)
+        local frame = make(kind, name, parent)
+        if parent == Minimap then function frame:SetAllPoints() error("no anchor") end end
+        return frame
+    end
+    ns.Toggle()
+    check(ns.Trail.State().miniLine.error ~= nil, "the reason is kept")
+    check(ns.Trail.State().lines > 0 and #ShownLines() > 0, "the world map has its line")
+    check(not ns.Trail.State().dotted, "and no dots")
+    check(not ChatHas("error"), "and the player saw no error")
+    ns.Toggle()
+    WorldMapFrame = nil
+end)
+
+test("a path that comes back near itself: the minimap line does not jump ahead", function()
+    MinimapScene(100, HAMMERFALL[1] - 200, HAMMERFALL[2])
+    local ns = Load()
+    ns.Toggle()
+    local at = Now(ns)
+    local function Point(north, east) return { continent = at.continent, x = at.x + north, y = at.y - east } end
+    -- North forty yards, a few yards east, and back south beside the way up.
+    local path = { Point(0, 0), Point(40, 0), Point(40, 6), Point(-20, 6) }
+    ns.Trail.Show({ { kind = "walk", from = path[1], to = path[4], path = path, pathId = 2, final = true } })
+    world.player.x, world.player.y = OnMap(1417, at.x + 10, at.y - 4)
+    ns.Trail.MiniLayout()
+    local mini = MiniLines()
+    local px, py = PinOnMinimap(Now(ns), path[2], 100, nil, 70)
+    check(Near(mini[1].to[1], px) and Near(mini[1].to[2], py),
+        "nearer to the way back than to the way up, the line still goes to the first turn")
+    ns.Toggle()
+end)
+
+test("along a real path the minimap line starts at the turn ahead, not at one already passed", function()
+    MinimapScene(100, HAMMERFALL[1] - 200, HAMMERFALL[2])
+    local ns = Load()
+    ns.Toggle()
+    local at = Now(ns)
+    local function Point(north, east) return { continent = at.continent, x = at.x + north, y = at.y - east } end
+    local path = { Point(0, 0), Point(40, 0), Point(40, 40), Point(80, 40) }
+    local legs = { { kind = "walk", from = path[1], to = path[4], path = path, pathId = 1, final = true } }
+    ns.Trail.Show(legs)
+    local mini = MiniLines()
+    eq(#mini, 3, "one line per stretch of the path")
+    check(Near(mini[1].to[1], 0) and Near(mini[1].to[2], 28), "the first to the turn ahead, forty yards north")
+    check(Near(mini[2].to[1], 28) and Near(mini[2].to[2], 28), "then east")
+    check(Near(mini[3].to[1], 28) and Near(mini[3].to[2], 56), "then north to the end")
+
+    -- Five yards past the first turn, before the path is worked out again.
+    world.player.x, world.player.y = OnMap(1417, at.x + 45, at.y)
+    ns.Trail.MiniLayout()
+    mini = MiniLines()
+    eq(#mini, 2, "the stretch behind the player is gone")
+    local px, py = PinOnMinimap(Now(ns), path[3], 100, nil, 70)
+    check(Near(mini[1].to[1], px) and Near(mini[1].to[2], py), "the line goes from the player to the second turn")
+    check(mini[1].to[1] > 0 and mini[1].from[1] > 0, "east: nothing points back at the turn behind")
+    ns.Toggle()
 end)
 
 test("no pin library: the steps still show, nothing is drawn", function()

@@ -135,6 +135,7 @@ local player = {}
 local function Usable(value)
     return value ~= nil and not Secret(value) and type(value) == "number"
 end
+Geo.Number = Usable   -- a number the addon may read and count with
 
 function Geo.BeginPass()
     player = {}
@@ -166,6 +167,16 @@ end
 function Geo.PlayerWorld()
     if not player.gx or type(player.instance) ~= "number" then return nil end
     return player.gx, player.gy, player.instance
+end
+
+-- The player right now, not as of the last pass, for what is placed at every
+-- frame: the game's world yards and the continent. Nil when unknown.
+function Geo.PlayerNow()
+    local hbd = player.hbd or HBD()
+    if not hbd then return nil end
+    local ok, x, y, instance = pcall(hbd.GetPlayerWorldPosition, hbd)
+    if ok and Usable(x) and Usable(y) and Usable(instance) then return y, x, instance end
+    return nil
 end
 
 -- The map of the zone the player is in, as of the last pass. Nil when unknown.
