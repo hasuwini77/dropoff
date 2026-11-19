@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.0
+
+- A line on the minimap. The trip is drawn there as on the world map: a plain line from you to the next stop, yellow for a walk, following the real path turn by turn, cut at the rim of the minimap. No dots. It moves with you at every frame and turns with a minimap set to rotate.
+- The marker of the next stop stays on the rim of the minimap.
+- If the minimap line cannot be drawn, it is left out: the marker stays, and the world map keeps its line.
+- `/dropoff debug` records how far the minimap shows and where that figure comes from, how many lines are on it, and where DropOff and the pin library each place the next stop, to compare.
+- Not yet checked in game.
+
 ## 0.7.1
 
 - Wrong hand-in fixed: Elemental Aid (Soutien élémentaire) sent a Horde shaman to Bath'rah in the Alterac Mountains. In WoW Forever it ends at Rau Cliffrunner, Freewind Post. Questie's Forever database names both, and DropOff took the nearest. DropOff now keeps a short list of Forever corrections for such quests: this one, seen in game, and Storm, Earth, and Fire of the same chain, from Forever data only.
