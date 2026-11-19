@@ -7,8 +7,12 @@ local _, ns = ...
 -- (Walk.lua) is drawn along it, turn by turn; any other stretch is a straight
 -- line between its two ends. The markers use the pin library that Questie
 -- and TomTom load (HereBeDragons-Pins), never embedded here. Only a trip
--- whose line cannot be drawn is laid as dots on the world map instead. The
--- minimap has the marker of the next stop, and no dots.
+-- whose line cannot be drawn is laid as dots on the world map instead.
+--
+-- The minimap has the same line, from the player on, placed at every frame
+-- with the pin library's own rule (its axes, its view radius, the rotating
+-- minimap) and cut at the rim; and the marker of the next stop. No dots: a
+-- minimap line that fails leaves the marker, and the world map as it is.
 local Trail = {}
 ns.Trail = Trail
 
@@ -25,6 +29,16 @@ local NEAR_PLAYER = 15          -- no dots this close to the player
 
 local LINE_PX = 4               -- width of the line on screen
 local LINE_ALPHA = 0.9
+
+local MINI_PX = 2.5             -- width of the line on the minimap
+local MINI_RIM = 0.9            -- share of the minimap's radius the line stops at: where the pin library keeps its rim markers
+local MINI_ARROW = 7            -- the line starts this far from the centre: clear of the player's arrow
+local MINI_MAX = 150            -- lines on the minimap at most
+local MINI_LOOK = 12            -- turns of the first leg searched for where the player is along it
+-- Yards across the minimap at each zoom, for a client without
+-- C_Minimap.GetViewRadius.
+local MINI_OUTDOOR = { [0] = 466 + 2 / 3, 400, 333 + 1 / 3, 266 + 2 / 3, 200, 133 + 1 / 3 }
+local MINI_INDOOR = { [0] = 300, 240, 180, 120, 80, 50 }
 
 local COLOUR = {
     walk = { 1, 0.82, 0 },
@@ -45,6 +59,13 @@ local segments, usedSegments = {}, 0   -- { line, from, to }: one per stretch on
 local wanted                    -- the stretches to draw as lines: { from, to, colour }
 local view                      -- what the last layout was made for; nil: lay out again
 local lineState = {}            -- how the last layout went, for the debug snapshot
+
+local mini                      -- a frame over the minimap, holding its lines
+local miniLines, miniShown = {}, 0
+local miniView = {}             -- what the minimap's lines were last placed for; `set` false: place again
+local miniFailed                -- where the trip whose minimap line could not be drawn ends
+local miniState = {}            -- how the last placing went, for the debug snapshot
+local rim                       -- the marker of the next stop on the minimap, and the point it marks
 
 -- The world map and its canvas, when there is one to draw on.
 local function Canvas()
@@ -201,6 +222,211 @@ local function Segment(from, to, colour)
     segment.line:Hide()
 end
 
+---------------------------------------------------------------------------
+-- The line on the minimap
+---------------------------------------------------------------------------
+
+local function Number(value)
+    return type(value) == "number" and not ns.Secret(value)
+end
+
+local function MiniHide(why)
+    -- Every line made, not only those counted: a placing may have stopped
+    -- half way. Nothing to do when they are hidden already.
+    if miniState.shown ~= 0 or miniShown > 0 then
+        for _, line in ipairs(miniLines) do line:Hide() end
+    end
+    miniShown, miniView.set = 0, false
+    miniState.shown, miniState.why = 0, why
+end
+
+-- Yards from the centre of the minimap to its edge, and where the figure
+-- comes from.
+local function ViewRadius(minimap)
+    local api = rawget(_G, "C_Minimap")
+    if type(api) == "table" and type(api.GetViewRadius) == "function" then
+        local ok, radius = pcall(api.GetViewRadius)
+        if ok and Number(radius) and radius > 0 then return radius, "api" end
+    end
+    local zoom = minimap:GetZoom()
+    local indoors = type(IsIndoors) == "function" and ns.Try(IsIndoors) == true
+    local across = Number(zoom) and (indoors and MINI_INDOOR or MINI_OUTDOOR)[zoom]
+    if across then return across / 2, indoors and "indoor" or "outdoor" end
+    return nil
+end
+
+-- The player's facing when the minimap turns with the player, false when it
+-- does not turn, nil when it turns and the facing is not known.
+local function Turned()
+    if type(GetCVar) ~= "function" or ns.Try(GetCVar, "rotateMinimap") ~= "1" then return false end
+    local facing = type(GetPlayerFacing) == "function" and ns.Try(GetPlayerFacing)
+    return Number(facing) and facing or nil
+end
+
+-- The part of the stretch a-b inside the circle of radius `rim` round the
+-- centre: its two ends, or nil when it is all outside.
+local function Inside(ax, ay, bx, by, rim)
+    local dx, dy = bx - ax, by - ay
+    local a = dx * dx + dy * dy
+    if a <= 0 then return nil end
+    local b = 2 * (ax * dx + ay * dy)
+    local c = ax * ax + ay * ay - rim * rim
+    local disc = b * b - 4 * a * c
+    if disc <= 0 then return nil end
+    local root = math.sqrt(disc)
+    local lo, hi = (-b - root) / (2 * a), (-b + root) / (2 * a)
+    if lo < 0 then lo = 0 end
+    if hi > 1 then hi = 1 end
+    if lo >= hi then return nil end
+    return ax + dx * lo, ay + dy * lo, ax + dx * hi, ay + dy * hi
+end
+
+-- How far (yards, squared) the point is from the stretch a-b.
+local function Off(x, y, a, b)
+    local dx, dy = b.x - a.x, b.y - a.y
+    local length = dx * dx + dy * dy
+    local t = length > 0 and ((x - a.x) * dx + (y - a.y) * dy) / length or 0
+    if t < 0 then t = 0 elseif t > 1 then t = 1 end
+    local ox, oy = x - (a.x + dx * t), y - (a.y + dy * t)
+    return ox * ox + oy * oy
+end
+
+-- A world point on the minimap as the last placing saw it: x to the right
+-- and y up from the centre, 1 at the edge. The pin library's rule.
+local function OnMini(point)
+    local east, north = miniView.y - point.y, point.x - miniView.x
+    return (east * miniView.cos + north * miniView.sin) / miniView.radius,
+           (north * miniView.cos - east * miniView.sin) / miniView.radius
+end
+
+local function MiniLine(colour, x1, y1, x2, y2)
+    local line = miniLines[miniShown + 1]
+    if not line then
+        line = mini:CreateLine(nil, "ARTWORK")
+        line:SetThickness(MINI_PX)
+        miniLines[miniShown + 1] = line
+    end
+    miniShown = miniShown + 1
+    local half, tall = miniView.half, miniView.tall
+    line:SetColorTexture(colour[1], colour[2], colour[3], LINE_ALPHA)
+    line:SetStartPoint("CENTER", mini, x1 * half, y1 * tall)
+    line:SetEndPoint("CENTER", mini, x2 * half, y2 * tall)
+    line:Show()
+end
+
+-- Puts the lines where the minimap now shows the trip. Runs at every frame
+-- while there is a trip, and does the work only when the player moved or
+-- turned, or the minimap changed its zoom or its size.
+local function MiniPlace()
+    local minimap = rawget(_G, "Minimap")
+    if not mini or not wanted or type(minimap) ~= "table" then return end
+    local x, y, continent = ns.Geo.PlayerNow()
+    if not x then return MiniHide("position") end
+    local width, height = minimap:GetWidth(), minimap:GetHeight()
+    if not Number(width) or not Number(height) or width <= 0 or height <= 0 then return MiniHide("size") end
+    local radius, source = ViewRadius(minimap)
+    if not radius then return MiniHide("radius") end
+    local facing = Turned()
+    if facing == nil then return MiniHide("facing") end
+
+    local view = miniView
+    if view.set and view.x == x and view.y == y and view.continent == continent and view.radius == radius
+        and view.facing == facing and view.width == width and view.height == height then
+        return
+    end
+    view.set, view.x, view.y, view.continent, view.radius = true, x, y, continent, radius
+    view.facing, view.width, view.height = facing, width, height
+    view.half, view.tall = width / 2, height / 2
+    view.cos, view.sin = 1, 0
+    if facing then view.cos, view.sin = math.cos(facing), math.sin(facing) end
+
+    local was = miniShown
+    miniShown = 0
+    local from = 1
+    -- The first leg starts at the player: the line does too, and goes to the
+    -- turn ahead. The player may have passed a turn or two since the trip
+    -- was laid, so the stretch nearest to the player says which turn that is.
+    if wanted[1] and wanted[1].first and wanted[1][1].continent == continent then
+        local nearest, least = 1, nil
+        for index = 1, math.min(#wanted, MINI_LOOK) do
+            local stretch = wanted[index]
+            if not stretch.first then break end
+            local off = Off(x, y, stretch[1], stretch[2])
+            -- As near as the one before: the turn between them is passed.
+            if not least or off <= least + 0.01 then nearest, least = index, off end
+        end
+        local tx, ty = OnMini(wanted[nearest][2])
+        local length = math.sqrt(tx * tx + ty * ty)
+        local gap = MINI_ARROW / view.half
+        if length > gap then
+            local x1, y1, x2, y2 = Inside(tx * gap / length, ty * gap / length, tx, ty, MINI_RIM)
+            if x1 then MiniLine(wanted[nearest][3], x1, y1, x2, y2) end
+        end
+        from = nearest + 1
+    end
+    for index = from, #wanted do
+        if miniShown >= MINI_MAX then break end
+        local stretch = wanted[index]
+        if stretch[1].continent == continent then
+            local ax, ay = OnMini(stretch[1])
+            local bx, by = OnMini(stretch[2])
+            -- Both ends past the same side of the minimap: nothing of it shows.
+            if not ((ax > MINI_RIM and bx > MINI_RIM) or (ax < -MINI_RIM and bx < -MINI_RIM)
+                or (ay > MINI_RIM and by > MINI_RIM) or (ay < -MINI_RIM and by < -MINI_RIM)) then
+                local x1, y1, x2, y2 = Inside(ax, ay, bx, by, MINI_RIM)
+                if x1 then MiniLine(stretch[3], x1, y1, x2, y2) end
+            end
+        end
+    end
+    for index = miniShown + 1, was do miniLines[index]:Hide() end
+    miniState.shown, miniState.why, miniState.radius, miniState.source = miniShown, nil, radius, source
+    miniState.turned, miniState.width, miniState.continent = facing and true or false, width, continent
+end
+
+-- Never lets a drawing error reach the player: the minimap's lines go, and
+-- only they. The next trip tries again.
+function Trail.MiniLayout()
+    if miniState.error then return end
+    local ok, err = pcall(MiniPlace)
+    if not ok then
+        miniState.error = tostring(err)
+        miniFailed = laying
+        pcall(MiniHide, "error")
+        if mini then mini:Hide() end
+        if ns.Log then ns.Log("trail minimap line: %s", miniState.error) end
+    end
+end
+
+-- The frame of the minimap's lines, made when the first trip needs it.
+local function Mini()
+    if mini then return mini end
+    local minimap = rawget(_G, "Minimap")
+    if type(minimap) ~= "table" or type(CreateFrame) ~= "function" then return nil end
+    local ok, frame = pcall(CreateFrame, "Frame", nil, minimap)
+    if not ok or type(frame) ~= "table" or type(frame.CreateLine) ~= "function" then return nil end
+    frame:SetAllPoints(minimap)
+    if frame.EnableMouse then frame:EnableMouse(false) end
+    frame:Hide()   -- shown while there is a trip: its OnUpdate runs only then
+    frame:SetScript("OnUpdate", Trail.MiniLayout)
+    mini = frame
+    return mini
+end
+
+-- Starts the minimap's lines for the trip just laid in `wanted`.
+local function MiniStart()
+    if laying ~= miniFailed then miniState.error, miniFailed = nil, nil end
+    if miniState.error or #wanted == 0 or not Mini() then return end
+    miniView.set = false
+    mini:Show()
+    Trail.MiniLayout()
+end
+
+local function MiniStop()
+    if not mini then return end
+    pcall(MiniHide)
+    mini:Hide()
+end
+
 -- Makes the lines of the current route once the world map can take them: it
 -- may not exist yet when the route is first shown.
 local function Lines()
@@ -276,7 +502,8 @@ end
 
 function Trail.Clear()
     pcall(HideLines)
-    usedSegments, wanted, view = 0, nil, nil
+    MiniStop()
+    usedSegments, wanted, view, rim = 0, nil, nil, nil
     if overlay then overlay:Hide() end
     if not drawn then return end
     drawn = nil
@@ -346,14 +573,16 @@ function Trail.Show(legs)
     -- is not tried again: it keeps its dots.
     wanted, laying = {}, Goal(legs)
     if laying ~= failed then lineState.error, failed = nil, nil end
-    for _, leg in ipairs(legs) do
+    for index, leg in ipairs(legs) do
         if leg.from.continent == leg.to.continent then
             local points = Through(leg)
             for at = 2, #points do
-                wanted[#wanted + 1] = { points[at - 1], points[at], COLOUR[leg.kind] or COLOUR.ride }
+                wanted[#wanted + 1] = { points[at - 1], points[at], COLOUR[leg.kind] or COLOUR.ride,
+                                        first = index == 1 }
             end
         end
     end
+    MiniStart()
     Lines()
     dotted, stale = usedSegments == 0 or lineState.error ~= nil, nil
 
@@ -418,15 +647,31 @@ function Trail.Show(legs)
         OnWorldMap(pins, marker, to)
         if index == 1 and ns.Nav.Mode() ~= "tomtom" then
             -- Without TomTom's own minimap icon: ours, kept on the rim when far.
-            local rim = Dot("minimap")
-            if leg.final then Style(rim, 14, nil, ICON_HAND_IN) else Style(rim, 9, colour) end
-            OnMinimap(pins, rim, to, true)
+            local stop = Dot("minimap")
+            if leg.final then Style(stop, 14, nil, ICON_HAND_IN) else Style(stop, 9, colour) end
+            OnMinimap(pins, stop, to, true)
+            rim = { dot = stop, point = to }
         end
     end
 end
 
+-- Where the pin library put the marker of the next stop on the minimap, and
+-- where this file's own rule puts the same point: the two agree when the
+-- minimap's line is drawn to the right scale and the right way round.
+local function RimCheck()
+    miniState.pin, miniState.own = nil, nil
+    if not rim or not miniView.set or rim.point.continent ~= miniView.continent then return end
+    local x, y = OnMini(rim.point)
+    local far = math.sqrt(x * x + y * y) / MINI_RIM
+    if far > 1 then x, y = x / far, y / far end   -- kept on the rim, as the library does
+    miniState.own = { x * miniView.half, y * miniView.tall }
+    local ok, _, _, _, px, py = pcall(rim.dot.GetPoint, rim.dot)
+    if ok and Number(px) and Number(py) then miniState.pin = { px, py } end
+end
+
 -- For the debug snapshot and the tests.
 function Trail.State()
+    pcall(RimCheck)
     return { drawn = drawn ~= nil, dotted = dotted or false, world = used.world, minimap = used.minimap,
-             lines = usedSegments, line = lineState }
+             lines = usedSegments, line = lineState, miniLine = miniState }
 end
