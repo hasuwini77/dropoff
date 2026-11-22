@@ -2,8 +2,8 @@
 ## Title: DropOff
 ## Notes: Guides you to turn in finished quests, quickest first, with the whole trip: flights, zeppelins, boats.
 ## Notes-frFR: Te guide pour rendre tes quêtes terminées, les plus rapides d'abord, avec tout le trajet : vols, zeppelins, bateaux.
-## Author: Edwin (Team Baguette)
-## Version: 0.8.0
+## Author: Hasuwini77 (Team Baguette)
+## Version: 0.8.1
 ## IconTexture: Interface\Icons\INV_Misc_Bag_08
 ## Category: Quests
 ## Category-frFR: Quêtes
@@ -13,6 +13,7 @@
 ## AddonCompartmentFunc: DropOff_OnAddonCompartmentClick
 ## X-License: GPL-3.0-or-later
 ## X-Website: https://github.com/hasuwini77/dropoff
+## X-Curse-Project-ID: 1823494
 
 Locales.lua
 Core.lua
