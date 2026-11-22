@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.8.1
+
+- First release on CurseForge. Same addon as 0.8.0: no change in game.
+- Author shown in the addon list: Hasuwini77 (Team Baguette).
+
 ## 0.8.0
 
 - A line on the minimap. The trip is drawn there as on the world map: a plain line from you to the next stop, yellow for a walk, following the real path turn by turn, cut at the rim of the minimap. No dots. It moves with you at every frame and turns with a minimap set to rotate.
