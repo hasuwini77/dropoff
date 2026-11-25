@@ -36,9 +36,11 @@ local SIZE_BUTTON = 16
 local CHAT_GAP, SCREEN_GAP, MIN_CAP = 28, 8, 160
 local WHEEL_STEP = 2                     -- lines per wheel tick
 local BAR_WIDTH, BAR_INSET, MIN_THUMB = 3, 5, 14   -- the scroll bar along the right edge
--- The thumb stays faint and neutral (gold is for the current hand-in), and
--- lights up for a moment while the wheel turns.
-local THUMB_IDLE, THUMB_LIT, THUMB_FADE = 0.45, 1, 1.2
+-- The thumb stays faint and neutral at rest, and turns gold for a moment
+-- while the wheel turns.
+local THUMB_IDLE = { 1, 1, 1, 0.18 }
+local THUMB_LIT = { 1, 0.82, 0, 0.75 }
+local THUMB_FADE = 1.2                   -- seconds the thumb stays lit after a tick
 
 local frame
 local rows, labels = {}, {}
@@ -201,9 +203,12 @@ local function Build()
         if ns.state.plan then UI.Render(ns.state.plan) end
         wheelTurns = wheelTurns + 1
         local turn = wheelTurns
-        frame.thumb:SetAlpha(THUMB_LIT)
+        frame.thumb:SetColorTexture(unpack(THUMB_LIT))
+        frame.thumb.lit = true
         C_Timer.After(THUMB_FADE, function()
-            if turn == wheelTurns then frame.thumb:SetAlpha(THUMB_IDLE) end
+            if turn ~= wheelTurns then return end
+            frame.thumb:SetColorTexture(unpack(THUMB_IDLE))
+            frame.thumb.lit = false
         end)
     end)
     frame:EnableMouseWheel(false)
@@ -241,8 +246,7 @@ local function Build()
     frame.track:Hide()
     frame.thumb = frame:CreateTexture(nil, "OVERLAY")
     frame.thumb:SetWidth(BAR_WIDTH)
-    frame.thumb:SetColorTexture(1, 1, 1, 0.6)
-    frame.thumb:SetAlpha(THUMB_IDLE)
+    frame.thumb:SetColorTexture(unpack(THUMB_IDLE))
     frame.thumb:Hide()
 
     frame.close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
