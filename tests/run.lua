@@ -2166,6 +2166,24 @@ test("the walk is a yellow line on the minimap, from the player to the rim", fun
     eq(#MiniLines(), 0, "closing takes the line off")
 end)
 
+test("without HereBeDragons (TomTom disabled) the minimap line reads the game's own position", function()
+    MinimapScene(100, HAMMERFALL[1] - 200, HAMMERFALL[2])
+    world.tomtom, world.hbd = false, false
+    local ns = Load()
+    ns.Toggle()
+    local here = Now(ns)
+    check(type(here.x) == "number" and type(here.continent) == "number", "the position is known")
+    local gy, gx = PlayerWorld()   -- the mock gives the game's y (west) first
+    check(Near(here.x, gx) and Near(here.y, gy), "where the player stands: " .. here.x .. "," .. here.y)
+    eq(#MiniLines(), 1, "the walk is on the minimap")
+    eq(ns.Trail.State().miniLine.why, nil, "not hidden")
+    world.player.x, world.player.y = OnMap(1417, HAMMERFALL[1] - 50, HAMMERFALL[2])
+    ns.Trail.MiniLayout()
+    eq(#MiniLines(), 2, "and it follows the player")
+    check(not ChatHas("error"), "no error")
+    ns.Toggle()
+end)
+
 test("a stop within the minimap: the line ends on it and the next leg leaves from it", function()
     MinimapScene(100, HAMMERFALL[1] - 50, HAMMERFALL[2])
     local ns = Load()
