@@ -6,7 +6,7 @@
 - A thin scroll marker on the right edge shows where you are in the list. Faint at rest, gold while the wheel turns.
 - The wheel only scrolls the window while the list is too long, and never in the small window: over a short list it still zooms the camera.
 - Also works with the Combat Log tab picked.
-- Checked in game.
+- Checked in game, except the Combat Log case.
 
 ## 0.8.1
 
