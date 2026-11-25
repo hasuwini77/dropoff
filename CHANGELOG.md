@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.8.2
+
+- The full window no longer runs over the chat. A long list stops just above the chat box (or the screen edge) and scrolls with the mouse wheel. A line at the bottom says how much is below or above, in French "+N en dessous (molette)".
+- A thin scroll marker on the right edge shows where you are in the list. Faint at rest, gold while the wheel turns.
+- The wheel only scrolls the window while the list is too long, and never in the small window: over a short list it still zooms the camera.
+- Also works with the Combat Log tab picked.
+- Checked in game.
+
 ## 0.8.1
 
 - First release on CurseForge. Same addon as 0.8.0: no change in game.
