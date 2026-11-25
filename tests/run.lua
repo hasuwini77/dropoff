@@ -383,7 +383,7 @@ local function InstallGlobals()
     SlashCmdList = {}
     DropOffDB, DropOffCharDB = nil, nil
     DropOffFrame = nil
-    ChatFrame1 = nil
+    ChatFrame1, ChatFrame2 = nil, nil
     OpenMapAPI = nil
 
     C_Timer = {
@@ -1361,6 +1361,14 @@ test("a long list stops above the chat box and scrolls with the wheel", function
     check(not DropOffFrame.thumb:IsShown() and not DropOffFrame.track:IsShown(), "nor scroll bar")
     DropOffFrame.size:Click()
     eq(DrawnTitles(ns), first, "the whole list comes back from the top")
+
+    -- The Combat Log tab: ChatFrame1 hides, ChatFrame2 shows in its place.
+    ChatFrame2 = ChatFrame1
+    ChatFrame1 = Widget()
+    ChatFrame1:Hide()
+    ns.UI.Render(ns.state.plan)
+    eq(DropOffFrame.height, cap, "the Combat Log tab stops it above the chat too")
+    ChatFrame2 = nil
 
     Place(400, 150, 800)
     ns.UI.Render(ns.state.plan)

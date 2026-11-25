@@ -477,27 +477,39 @@ local function Numbers(...)
     return true
 end
 
+-- The top of the chat box under the window, in the window's scale, or nil.
+-- Any chat window counts: with the Combat Log tab picked, ChatFrame1 is
+-- hidden and ChatFrame2 shows in its place.
+local function ChatTop(top, left, right)
+    local highest
+    for index = 1, tonumber(NUM_CHAT_WINDOWS) or 10 do
+        local chat = rawget(_G, "ChatFrame" .. index)
+        if type(chat) == "table" and chat.IsShown and chat:IsShown() then
+            local chatTop, chatLeft, chatRight = chat:GetTop(), chat:GetLeft(), chat:GetRight()
+            if Numbers(chatTop, chatLeft, chatRight) then
+                -- The chat may have a scale of its own: count it in the window's.
+                local mine, its = frame:GetEffectiveScale(), chat:GetEffectiveScale()
+                local ratio = Numbers(mine, its) and mine > 0 and its / mine or 1
+                chatTop, chatLeft, chatRight = chatTop * ratio, chatLeft * ratio, chatRight * ratio
+                -- Only a chat right under the window: one beside it or above
+                -- its top leaves the room down to the screen edge.
+                if chatLeft < right and chatRight > left and top > chatTop + CHAT_GAP
+                    and (not highest or chatTop > highest) then
+                    highest = chatTop
+                end
+            end
+        end
+    end
+    return highest
+end
+
 -- The tallest the window may be: from its top down to the chat box under
 -- it, else to the screen edge. nil when the game cannot place it yet.
 local function Cap()
     local top, left, right = frame:GetTop(), frame:GetLeft(), frame:GetRight()
     if not Numbers(top, left, right) then return nil end
-    local floor = SCREEN_GAP
-    local chat = ChatFrame1
-    if chat and chat:IsShown() then
-        local chatTop, chatLeft, chatRight = chat:GetTop(), chat:GetLeft(), chat:GetRight()
-        if Numbers(chatTop, chatLeft, chatRight) then
-            -- The chat may have a scale of its own: count it in the window's.
-            local mine, its = frame:GetEffectiveScale(), chat:GetEffectiveScale()
-            local ratio = Numbers(mine, its) and mine > 0 and its / mine or 1
-            chatTop, chatLeft, chatRight = chatTop * ratio, chatLeft * ratio, chatRight * ratio
-            -- Only a chat right under the window: one beside it or above its
-            -- top leaves the room down to the screen edge.
-            if chatLeft < right and chatRight > left and top > chatTop + CHAT_GAP then
-                floor = chatTop + CHAT_GAP
-            end
-        end
-    end
+    local chatTop = ChatTop(top, left, right)
+    local floor = chatTop and chatTop + CHAT_GAP or SCREEN_GAP
     return math.max(MIN_CAP, top - floor)
 end
 
