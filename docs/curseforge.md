@@ -1,6 +1,6 @@
 # Publishing DropOff on CurseForge
 
-The project exists: https://www.curseforge.com/wow/addons/dropoff (ID 1823494, created 2026-11-22, GPLv3, source linked to GitHub, logo `docs/media/logo.png`). It shows up once a moderator approves it.
+The project exists: https://www.curseforge.com/wow/addons/dropoff (ID 1823494, created 2026-11-22, GPLv3, source linked to GitHub, logo `docs/media/logo.png`, painted icon since 2026-11-25). It shows up once a moderator approves it.
 
 Publishing is free. It needs a CurseForge author account, which is why the project itself has to be created by hand.
 
