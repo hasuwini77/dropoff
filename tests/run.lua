@@ -198,6 +198,7 @@ local function Widget()
     function widget:SetText(text) self.text = text end
     function widget:GetText() return self.text end
     function widget:SetHeight(height) self.height = height end
+    function widget:EnableMouseWheel(on) self.wheel = on and true or false end
     function widget:SetTexture(texture) self.texture = texture end
     function widget:GetPoint() return "RIGHT", nil, "RIGHT", -140, 60 end
     function widget:CreateTexture() return Widget() end
@@ -382,6 +383,7 @@ local function InstallGlobals()
     SlashCmdList = {}
     DropOffDB, DropOffCharDB = nil, nil
     DropOffFrame = nil
+    ChatFrame1 = nil
     OpenMapAPI = nil
 
     C_Timer = {
@@ -1285,6 +1287,77 @@ test("the small window shows only the next hand-in, and keeps guiding", function
     eq(#ns.UI.Rows(), 5, "every row again")
     check(DropOffFrame.summary:IsShown(), "and the summary")
     eq(DropOffFrame.height, full, "at its full height")
+end)
+
+-- Places the window and the chat box on a screen the mock has no layout for.
+local function Place(top, chatTop, chatRight)
+    function DropOffFrame:GetTop() return top end
+    function DropOffFrame:GetLeft() return 900 end
+    function DropOffFrame:GetRight() return 1230 end
+    ChatFrame1 = Widget()
+    function ChatFrame1:GetTop() return chatTop end
+    function ChatFrame1:GetLeft() return 20 end
+    function ChatFrame1:GetRight() return chatRight end
+end
+
+-- The count in a "+N below" or "N above" hint, nil when it is not that one.
+local function HintCount(format, text, most)
+    for count = 1, most do
+        if format:format(count) == text then return count end
+    end
+end
+
+local function DrawnTitles(ns)
+    local out = {}
+    for _, row in ipairs(ns.UI.Rows()) do out[#out + 1] = row.data.title end
+    return table.concat(out, ",")
+end
+
+test("a long list stops above the chat box and scrolls with the wheel", function()
+    Scene()
+    local ns = Load()
+    ns.Toggle()
+    local full = DropOffFrame.height
+    check(not DropOffFrame.more:IsShown(), "no hint while the game cannot place the window")
+    check(not DropOffFrame.wheel, "and the wheel is left to the camera")
+
+    Place(400, 150, 1000)
+    ns.UI.Render(ns.state.plan)
+    local cap = 400 - (150 + 28)
+    check(full > cap, "the list is taller than the room: " .. full)
+    eq(DropOffFrame.height, cap, "the window stops above the chat")
+    check(DropOffFrame.wheel, "the wheel scrolls it")
+    local total = #ns.UI.Lines(ns.state.plan, false)
+    check(HintCount(ns.L.SCROLL_BELOW, DropOffFrame.more:GetText(), total),
+        "it says how many lines are below: " .. tostring(DropOffFrame.more:GetText()))
+    check(DropOffFrame.more:IsShown(), "shown")
+    local first = DrawnTitles(ns)
+
+    DropOffFrame.scripts.OnMouseWheel(DropOffFrame, -1)
+    local scrolled = DrawnTitles(ns)
+    check(scrolled ~= first, "a tick down shows other rows: " .. first .. " / " .. scrolled)
+    eq(DropOffFrame.height, cap, "at the same height")
+    Advance(10)
+    eq(DrawnTitles(ns), scrolled, "the refreshes keep the place")
+
+    for _ = 1, 20 do DropOffFrame.scripts.OnMouseWheel(DropOffFrame, -1) end
+    check(HintCount(ns.L.SCROLL_ABOVE, DropOffFrame.more:GetText(), total),
+        "at the bottom it says what is above: " .. DropOffFrame.more:GetText())
+    check(#ns.UI.Rows() > 0, "the last page is not empty")
+    for _ = 1, 20 do DropOffFrame.scripts.OnMouseWheel(DropOffFrame, 1) end
+    eq(DrawnTitles(ns), first, "back up to the top")
+
+    DropOffFrame.size:Click()
+    check(not DropOffFrame.wheel, "the small window leaves the wheel to the camera")
+    check(not DropOffFrame.more:IsShown(), "and has no hint")
+    DropOffFrame.size:Click()
+    eq(DrawnTitles(ns), first, "the whole list comes back from the top")
+
+    Place(400, 150, 800)
+    ns.UI.Render(ns.state.plan)
+    check(not DropOffFrame.more:IsShown(), "a chat box beside the window leaves it whole")
+    eq(DropOffFrame.height, full, "at its full height")
+    check(not DropOffFrame.wheel, "and the wheel to the camera")
 end)
 
 test("the small window comes back small after a reload", function()
