@@ -1331,12 +1331,16 @@ test("a long list stops above the chat box and scrolls with the wheel", function
     check(HintCount(ns.L.SCROLL_BELOW, DropOffFrame.more:GetText(), total),
         "it says how many lines are below: " .. tostring(DropOffFrame.more:GetText()))
     check(DropOffFrame.more:IsShown(), "shown")
+    check(DropOffFrame.thumb:IsShown() and DropOffFrame.track:IsShown(), "a scroll bar shows where the view is")
+    eq(DropOffFrame.thumb.down, 0, "at the top of its track")
+    check(DropOffFrame.thumb.height < DropOffFrame.track.height, "shorter than its track")
     local first = DrawnTitles(ns)
 
     DropOffFrame.scripts.OnMouseWheel(DropOffFrame, -1)
     local scrolled = DrawnTitles(ns)
     check(scrolled ~= first, "a tick down shows other rows: " .. first .. " / " .. scrolled)
     eq(DropOffFrame.height, cap, "at the same height")
+    check(DropOffFrame.thumb.down > 0, "the thumb moved down")
     Advance(10)
     eq(DrawnTitles(ns), scrolled, "the refreshes keep the place")
 
@@ -1344,12 +1348,14 @@ test("a long list stops above the chat box and scrolls with the wheel", function
     check(HintCount(ns.L.SCROLL_ABOVE, DropOffFrame.more:GetText(), total),
         "at the bottom it says what is above: " .. DropOffFrame.more:GetText())
     check(#ns.UI.Rows() > 0, "the last page is not empty")
+    eq(DropOffFrame.thumb.down + DropOffFrame.thumb.height, DropOffFrame.track.height, "the thumb at the bottom")
     for _ = 1, 20 do DropOffFrame.scripts.OnMouseWheel(DropOffFrame, 1) end
     eq(DrawnTitles(ns), first, "back up to the top")
 
     DropOffFrame.size:Click()
     check(not DropOffFrame.wheel, "the small window leaves the wheel to the camera")
     check(not DropOffFrame.more:IsShown(), "and has no hint")
+    check(not DropOffFrame.thumb:IsShown() and not DropOffFrame.track:IsShown(), "nor scroll bar")
     DropOffFrame.size:Click()
     eq(DrawnTitles(ns), first, "the whole list comes back from the top")
 
