@@ -35,6 +35,7 @@ local SIZE_BUTTON = 16
 -- A long list stops above the chat box (or the screen edge) and scrolls.
 local CHAT_GAP, SCREEN_GAP, MIN_CAP = 28, 8, 160
 local WHEEL_STEP = 2                     -- lines per wheel tick
+local BAR_WIDTH, BAR_INSET, MIN_THUMB = 3, 5, 14   -- the scroll bar along the right edge
 
 local frame
 local rows, labels = {}, {}
@@ -221,6 +222,17 @@ local function Build()
     frame.more = NewLabel()
     frame.more:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", PAD, PAD + 4)
     frame.more:Hide()
+
+    -- A thin scroll bar in the right padding: where the visible part sits in
+    -- the whole list. Only while the list overflows.
+    frame.track = frame:CreateTexture(nil, "ARTWORK")
+    frame.track:SetWidth(BAR_WIDTH)
+    frame.track:SetColorTexture(1, 1, 1, 0.08)
+    frame.track:Hide()
+    frame.thumb = frame:CreateTexture(nil, "OVERLAY")
+    frame.thumb:SetWidth(BAR_WIDTH)
+    frame.thumb:SetColorTexture(1, 0.82, 0, 0.7)
+    frame.thumb:Hide()
 
     frame.close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     frame.close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -2)
@@ -596,8 +608,28 @@ function UI.Render(plan)
         Colour(frame.more, DISABLED)
         frame.more:Show()
         frame:SetHeight(cap)
+
+        -- The thumb: as tall as the share of the list in sight, as far down
+        -- as the share scrolled past.
+        local above, inSight = 0, 0
+        for index = 1, offset do above = above + lines[index].height end
+        for index = offset + 1, last do inSight = inSight + lines[index].height end
+        local thumb = math.max(MIN_THUMB, room * inSight / total)
+        local down = math.min(room - thumb, room * above / total)
+        if last == #lines then down = room - thumb end
+        frame.track:ClearAllPoints()
+        frame.track:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -BAR_INSET, -top)
+        frame.track:SetHeight(room)
+        frame.track:Show()
+        frame.thumb:ClearAllPoints()
+        frame.thumb:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -BAR_INSET, -(top + down))
+        frame.thumb:SetHeight(thumb)
+        frame.thumb.down = down
+        frame.thumb:Show()
     else
         frame.more:Hide()
+        frame.track:Hide()
+        frame.thumb:Hide()
         frame:SetHeight(-y + PAD)
     end
     frame:EnableMouseWheel(overflow)
