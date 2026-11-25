@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/media/logo.png" width="160" alt="DropOff"></p>
+
 # DropOff
 
 Bags full of quest items? DropOff lists the quests you have already finished, tells you how many bag slots each one frees, and takes you to the quickest hand-in first: which flight to take, which zeppelin or boat, then the walk.
