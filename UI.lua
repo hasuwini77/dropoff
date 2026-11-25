@@ -609,13 +609,14 @@ function UI.Render(plan)
         frame.more:Show()
         frame:SetHeight(cap)
 
-        -- The thumb: as tall as the share of the list in sight, as far down
-        -- as the share scrolled past.
+        -- The thumb: a short marker, half the share of the list in sight,
+        -- as far down its track as the list is scrolled.
         local above, inSight = 0, 0
         for index = 1, offset do above = above + lines[index].height end
         for index = offset + 1, last do inSight = inSight + lines[index].height end
-        local thumb = math.max(MIN_THUMB, room * inSight / total)
-        local down = math.min(room - thumb, room * above / total)
+        local thumb = math.max(MIN_THUMB, room * inSight / total / 2)
+        local scrollable = total - inSight
+        local down = scrollable > 0 and (room - thumb) * math.min(1, above / scrollable) or 0
         if last == #lines then down = room - thumb end
         frame.track:ClearAllPoints()
         frame.track:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -BAR_INSET, -top)
