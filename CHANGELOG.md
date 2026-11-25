@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.8.3
+
+- With the Combat Log tab picked, the window now stops above its filter bar ("My actions / What happened to me?") and the tabs, instead of covering them.
+
 ## 0.8.2
 
 - The full window no longer runs over the chat. A long list stops just above the chat box (or the screen edge) and scrolls with the mouse wheel. A line at the bottom says how much is below or above, in French "+N en dessous (molette)".

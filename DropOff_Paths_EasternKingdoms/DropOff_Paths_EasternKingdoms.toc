@@ -4,7 +4,7 @@
 ## Notes: Walking maps of Eastern Kingdoms for DropOff. Loaded by DropOff at the first walk there.
 ## Notes-frFR: Cartes de marche pour DropOff : Royaumes de l'Est. DropOff les charge au premier trajet à pied là-bas.
 ## Author: Cillian Berragan (Shortest Path Forever), packaged by Hasuwini77 (Team Baguette)
-## Version: 0.8.2
+## Version: 0.8.3
 ## Category: Quests
 ## Category-frFR: Quêtes
 ## Group: DropOff
