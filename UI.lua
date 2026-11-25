@@ -36,6 +36,9 @@ local SIZE_BUTTON = 16
 local CHAT_GAP, SCREEN_GAP, MIN_CAP = 28, 8, 160
 local WHEEL_STEP = 2                     -- lines per wheel tick
 local BAR_WIDTH, BAR_INSET, MIN_THUMB = 3, 5, 14   -- the scroll bar along the right edge
+-- The thumb stays faint and neutral (gold is for the current hand-in), and
+-- lights up for a moment while the wheel turns.
+local THUMB_IDLE, THUMB_LIT, THUMB_FADE = 0.45, 1, 1.2
 
 local frame
 local rows, labels = {}, {}
@@ -192,9 +195,16 @@ local function Build()
     -- The wheel scrolls a list too long for the room. Setting the script turns
     -- the wheel on, so it is turned off until a list overflows: over a short
     -- list the wheel keeps zooming the camera.
+    local wheelTurns = 0
     frame:SetScript("OnMouseWheel", function(_, delta)
         offset = offset - delta * WHEEL_STEP
         if ns.state.plan then UI.Render(ns.state.plan) end
+        wheelTurns = wheelTurns + 1
+        local turn = wheelTurns
+        frame.thumb:SetAlpha(THUMB_LIT)
+        C_Timer.After(THUMB_FADE, function()
+            if turn == wheelTurns then frame.thumb:SetAlpha(THUMB_IDLE) end
+        end)
     end)
     frame:EnableMouseWheel(false)
     if frame.SetBackdrop then
@@ -227,11 +237,12 @@ local function Build()
     -- the whole list. Only while the list overflows.
     frame.track = frame:CreateTexture(nil, "ARTWORK")
     frame.track:SetWidth(BAR_WIDTH)
-    frame.track:SetColorTexture(1, 1, 1, 0.08)
+    frame.track:SetColorTexture(1, 1, 1, 0.05)
     frame.track:Hide()
     frame.thumb = frame:CreateTexture(nil, "OVERLAY")
     frame.thumb:SetWidth(BAR_WIDTH)
-    frame.thumb:SetColorTexture(1, 0.82, 0, 0.7)
+    frame.thumb:SetColorTexture(1, 1, 1, 0.6)
+    frame.thumb:SetAlpha(THUMB_IDLE)
     frame.thumb:Hide()
 
     frame.close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")

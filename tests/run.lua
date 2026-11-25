@@ -198,6 +198,7 @@ local function Widget()
     function widget:SetText(text) self.text = text end
     function widget:GetText() return self.text end
     function widget:SetHeight(height) self.height = height end
+    function widget:SetAlpha(alpha) self.alpha = alpha end
     function widget:EnableMouseWheel(on) self.wheel = on and true or false end
     function widget:SetTexture(texture) self.texture = texture end
     function widget:GetPoint() return "RIGHT", nil, "RIGHT", -140, 60 end
@@ -1341,6 +1342,10 @@ test("a long list stops above the chat box and scrolls with the wheel", function
     check(scrolled ~= first, "a tick down shows other rows: " .. first .. " / " .. scrolled)
     eq(DropOffFrame.height, cap, "at the same height")
     check(DropOffFrame.thumb.down > 0, "the thumb moved down")
+    local idle = DropOffFrame.thumb.alpha
+    check(idle > 0, "the thumb lights up while the wheel turns")
+    Advance(2)
+    check(DropOffFrame.thumb.alpha < idle, "and fades back after")
     Advance(10)
     eq(DrawnTitles(ns), scrolled, "the refreshes keep the place")
 
