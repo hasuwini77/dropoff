@@ -32,9 +32,20 @@ local TOP_FULL, TOP_COMPACT = 36, 20     -- from the title down to the first lin
 local SHRINK = "Interface\\Buttons\\UI-MinusButton-"    -- the size button: minus shrinks,
 local EXPAND = "Interface\\Buttons\\UI-PlusButton-"     -- plus brings the list back
 local SIZE_BUTTON = 16
+-- A long list stops above the chat box (or the screen edge) and scrolls.
+local CHAT_GAP, SCREEN_GAP, MIN_CAP = 28, 8, 160
+local WHEEL_STEP = 2                     -- lines per wheel tick
+local BAR_WIDTH, BAR_INSET, MIN_THUMB = 3, 5, 14   -- the scroll bar along the right edge
+-- The thumb stays faint and neutral at rest, and turns gold for a moment
+-- while the wheel turns.
+local THUMB_IDLE = { 1, 1, 1, 0.18 }
+local THUMB_LIT = { 1, 0.82, 0, 0.75 }
+local THUMB_FADE = 1.2                   -- seconds the thumb stays lit after a tick
 
 local frame
 local rows, labels = {}, {}
+-- Lines scrolled past at the top, and what they were counted for.
+local offset, seenCurrent, seenCompact = 0, nil, nil
 
 ---------------------------------------------------------------------------
 -- Construction
@@ -180,7 +191,27 @@ local function Build()
         self:StopMovingOrSizing()
         AnchorTop()
         SavePosition()
+        -- Moved nearer the chat or the screen edge: the room left has changed.
+        if ns.state.plan then UI.Render(ns.state.plan) end
     end)
+    -- The wheel scrolls a list too long for the room. Setting the script turns
+    -- the wheel on, so it is turned off until a list overflows: over a short
+    -- list the wheel keeps zooming the camera.
+    local wheelTurns = 0
+    frame:SetScript("OnMouseWheel", function(_, delta)
+        offset = offset - delta * WHEEL_STEP
+        if ns.state.plan then UI.Render(ns.state.plan) end
+        wheelTurns = wheelTurns + 1
+        local turn = wheelTurns
+        frame.thumb:SetColorTexture(unpack(THUMB_LIT))
+        frame.thumb.lit = true
+        C_Timer.After(THUMB_FADE, function()
+            if turn ~= wheelTurns then return end
+            frame.thumb:SetColorTexture(unpack(THUMB_IDLE))
+            frame.thumb.lit = false
+        end)
+    end)
+    frame:EnableMouseWheel(false)
     if frame.SetBackdrop then
         frame:SetBackdrop({
             bgFile = "Interface\\Buttons\\WHITE8x8",
@@ -201,6 +232,22 @@ local function Build()
     frame.summary:SetWidth(INNER - 20)
     frame.summary:SetJustifyH("LEFT")
     frame.summary:SetWordWrap(false)
+
+    -- Says how much of the list is out of sight, at the bottom of the window.
+    frame.more = NewLabel()
+    frame.more:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", PAD, PAD + 4)
+    frame.more:Hide()
+
+    -- A thin scroll bar in the right padding: where the visible part sits in
+    -- the whole list. Only while the list overflows.
+    frame.track = frame:CreateTexture(nil, "ARTWORK")
+    frame.track:SetWidth(BAR_WIDTH)
+    frame.track:SetColorTexture(1, 1, 1, 0.05)
+    frame.track:Hide()
+    frame.thumb = frame:CreateTexture(nil, "OVERLAY")
+    frame.thumb:SetWidth(BAR_WIDTH)
+    frame.thumb:SetColorTexture(unpack(THUMB_IDLE))
+    frame.thumb:Hide()
 
     frame.close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
     frame.close:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -2, -2)
@@ -423,6 +470,60 @@ function UI.Lines(plan, compact)
     return lines
 end
 
+local function Numbers(...)
+    for index = 1, select("#", ...) do
+        if type(select(index, ...)) ~= "number" then return false end
+    end
+    return true
+end
+
+-- The top of the chat box under the window, in the window's scale, or nil.
+-- Any chat window counts: with the Combat Log tab picked, ChatFrame1 is
+-- hidden and ChatFrame2 shows in its place.
+local function ChatTop(top, left, right)
+    local highest
+    for index = 1, tonumber(NUM_CHAT_WINDOWS) or 10 do
+        local chat = rawget(_G, "ChatFrame" .. index)
+        if type(chat) == "table" and chat.IsShown and chat:IsShown() then
+            local chatTop, chatLeft, chatRight = chat:GetTop(), chat:GetLeft(), chat:GetRight()
+            if Numbers(chatTop, chatLeft, chatRight) then
+                -- The chat may have a scale of its own: count it in the window's.
+                local mine, its = frame:GetEffectiveScale(), chat:GetEffectiveScale()
+                local ratio = Numbers(mine, its) and mine > 0 and its / mine or 1
+                chatTop, chatLeft, chatRight = chatTop * ratio, chatLeft * ratio, chatRight * ratio
+                -- Only a chat right under the window: one beside it or above
+                -- its top leaves the room down to the screen edge.
+                if chatLeft < right and chatRight > left and top > chatTop + CHAT_GAP
+                    and (not highest or chatTop > highest) then
+                    highest = chatTop
+                end
+            end
+        end
+    end
+    return highest
+end
+
+-- The tallest the window may be: from its top down to the chat box under
+-- it, else to the screen edge. nil when the game cannot place it yet.
+local function Cap()
+    local top, left, right = frame:GetTop(), frame:GetLeft(), frame:GetRight()
+    if not Numbers(top, left, right) then return nil end
+    local chatTop = ChatTop(top, left, right)
+    local floor = chatTop and chatTop + CHAT_GAP or SCREEN_GAP
+    return math.max(MIN_CAP, top - floor)
+end
+
+-- The last line that fits in `room`, drawing from the line after `skip`.
+local function Fit(lines, skip, room)
+    local used, last = 0, skip
+    for index = skip + 1, #lines do
+        used = used + lines[index].height
+        if used > room then break end
+        last = index
+    end
+    return last
+end
+
 function UI.Render(plan)
     if not frame then return end
 
@@ -440,10 +541,53 @@ function UI.Render(plan)
     frame.size.compact = compact
 
     local lines = UI.Lines(plan, compact)
-    local usedRows, usedLabels = 0, 0
-    local y = -(PAD + (compact and TOP_COMPACT or TOP_FULL))
+    local top = PAD + (compact and TOP_COMPACT or TOP_FULL)
+    local total = 0
+    for _, line in ipairs(lines) do total = total + line.height end
 
-    for _, line in ipairs(lines) do
+    -- The small window is never long enough to need it.
+    local cap
+    if not compact then
+        -- Held by its top, so the room measured does not move with the height.
+        AnchorTop()
+        cap = Cap()
+    end
+    local overflow = cap ~= nil and top + total + PAD > cap
+    local room = overflow and cap - top - PAD - NOTE_HEIGHT or total
+
+    -- Another hand-in to head for, or the other size: back to the top,
+    -- unless the new current row is in sight already (the player clicked it).
+    if plan.current ~= seenCurrent or compact ~= seenCompact then
+        seenCurrent, seenCompact = plan.current, compact
+        local inSight = false
+        if overflow then
+            local last = Fit(lines, offset, room)
+            for index = offset + 1, last do
+                if lines[index].current then inSight = true end
+            end
+        end
+        if not inSight then offset = 0 end
+    end
+
+    -- Scrolled no further than a full last page.
+    local maxOffset = 0
+    if overflow then
+        local used = 0
+        maxOffset = #lines
+        for index = #lines, 1, -1 do
+            used = used + lines[index].height
+            if used > room then break end
+            maxOffset = index - 1
+        end
+    end
+    offset = math.max(0, math.min(offset, maxOffset))
+    local last = overflow and Fit(lines, offset, room) or #lines
+
+    local usedRows, usedLabels = 0, 0
+    local y = -top
+
+    for index = offset + 1, last do
+        local line = lines[index]
         if line.kind == "row" then
             usedRows = usedRows + 1
             local row = rows[usedRows]
@@ -485,7 +629,38 @@ function UI.Render(plan)
     for index = usedRows + 1, #rows do rows[index]:Hide() end
     for index = usedLabels + 1, #labels do labels[index]:Hide() end
 
-    frame:SetHeight(-y + PAD)
+    if overflow then
+        local below = #lines - last
+        frame.more:SetText(below > 0 and L.SCROLL_BELOW:format(below) or L.SCROLL_ABOVE:format(offset))
+        Colour(frame.more, DISABLED)
+        frame.more:Show()
+        frame:SetHeight(cap)
+
+        -- The thumb: a short marker, half the share of the list in sight,
+        -- as far down its track as the list is scrolled.
+        local above, inSight = 0, 0
+        for index = 1, offset do above = above + lines[index].height end
+        for index = offset + 1, last do inSight = inSight + lines[index].height end
+        local thumb = math.max(MIN_THUMB, room * inSight / total / 2)
+        local scrollable = total - inSight
+        local down = scrollable > 0 and (room - thumb) * math.min(1, above / scrollable) or 0
+        if last == #lines then down = room - thumb end
+        frame.track:ClearAllPoints()
+        frame.track:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -BAR_INSET, -top)
+        frame.track:SetHeight(room)
+        frame.track:Show()
+        frame.thumb:ClearAllPoints()
+        frame.thumb:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -BAR_INSET, -(top + down))
+        frame.thumb:SetHeight(thumb)
+        frame.thumb.down = down
+        frame.thumb:Show()
+    else
+        frame.more:Hide()
+        frame.track:Hide()
+        frame.thumb:Hide()
+        frame:SetHeight(-y + PAD)
+    end
+    frame:EnableMouseWheel(overflow)
 end
 
 ---------------------------------------------------------------------------
