@@ -477,13 +477,22 @@ local function Numbers(...)
     return true
 end
 
+-- What the chat box is made of: any chat window (with the Combat Log tab
+-- picked, ChatFrame1 is hidden and ChatFrame2 shows in its place), and the
+-- Combat Log's filter bar, which sits above ChatFrame2, under the tabs.
+local function ChatParts()
+    local parts = {}
+    for index = 1, tonumber(NUM_CHAT_WINDOWS) or 10 do
+        parts[#parts + 1] = rawget(_G, "ChatFrame" .. index)
+    end
+    parts[#parts + 1] = rawget(_G, "CombatLogQuickButtonFrame_Custom")
+    return parts
+end
+
 -- The top of the chat box under the window, in the window's scale, or nil.
--- Any chat window counts: with the Combat Log tab picked, ChatFrame1 is
--- hidden and ChatFrame2 shows in its place.
 local function ChatTop(top, left, right)
     local highest
-    for index = 1, tonumber(NUM_CHAT_WINDOWS) or 10 do
-        local chat = rawget(_G, "ChatFrame" .. index)
+    for _, chat in ipairs(ChatParts()) do
         if type(chat) == "table" and chat.IsShown and chat:IsShown() then
             local chatTop, chatLeft, chatRight = chat:GetTop(), chat:GetLeft(), chat:GetRight()
             if Numbers(chatTop, chatLeft, chatRight) then
