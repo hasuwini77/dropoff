@@ -383,7 +383,7 @@ local function InstallGlobals()
     SlashCmdList = {}
     DropOffDB, DropOffCharDB = nil, nil
     DropOffFrame = nil
-    ChatFrame1, ChatFrame2 = nil, nil
+    ChatFrame1, ChatFrame2, CombatLogQuickButtonFrame_Custom = nil, nil, nil
     OpenMapAPI = nil
 
     C_Timer = {
@@ -1368,7 +1368,14 @@ test("a long list stops above the chat box and scrolls with the wheel", function
     ChatFrame1:Hide()
     ns.UI.Render(ns.state.plan)
     eq(DropOffFrame.height, cap, "the Combat Log tab stops it above the chat too")
-    ChatFrame2 = nil
+    -- And above the Combat Log's filter bar, which sits over ChatFrame2.
+    CombatLogQuickButtonFrame_Custom = Widget()
+    function CombatLogQuickButtonFrame_Custom:GetTop() return 172 end
+    function CombatLogQuickButtonFrame_Custom:GetLeft() return 20 end
+    function CombatLogQuickButtonFrame_Custom:GetRight() return 1000 end
+    ns.UI.Render(ns.state.plan)
+    eq(DropOffFrame.height, 400 - (172 + 28), "above its filter bar and the tabs")
+    ChatFrame2, CombatLogQuickButtonFrame_Custom = nil, nil
 
     Place(400, 150, 800)
     ns.UI.Render(ns.state.plan)
@@ -2157,6 +2164,24 @@ test("the walk is a yellow line on the minimap, from the player to the rim", fun
         "and where the next stop's marker should be, to compare with where the library put it")
     ns.Toggle()
     eq(#MiniLines(), 0, "closing takes the line off")
+end)
+
+test("without HereBeDragons (TomTom disabled) the minimap line reads the game's own position", function()
+    MinimapScene(100, HAMMERFALL[1] - 200, HAMMERFALL[2])
+    world.tomtom, world.hbd = false, false
+    local ns = Load()
+    ns.Toggle()
+    local here = Now(ns)
+    check(type(here.x) == "number" and type(here.continent) == "number", "the position is known")
+    local gy, gx = PlayerWorld()   -- the mock gives the game's y (west) first
+    check(Near(here.x, gx) and Near(here.y, gy), "where the player stands: " .. here.x .. "," .. here.y)
+    eq(#MiniLines(), 1, "the walk is on the minimap")
+    eq(ns.Trail.State().miniLine.why, nil, "not hidden")
+    world.player.x, world.player.y = OnMap(1417, HAMMERFALL[1] - 50, HAMMERFALL[2])
+    ns.Trail.MiniLayout()
+    eq(#MiniLines(), 2, "and it follows the player")
+    check(not ChatHas("error"), "no error")
+    ns.Toggle()
 end)
 
 test("a stop within the minimap: the line ends on it and the next leg leaves from it", function()
