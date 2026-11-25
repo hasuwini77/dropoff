@@ -31,7 +31,7 @@ local MAX_STEPS = 8                      -- route steps listed under the current
 local TOP_FULL, TOP_COMPACT = 36, 20     -- from the title down to the first line
 local SHRINK = "Interface\\Buttons\\UI-MinusButton-"    -- the size button: minus shrinks,
 local EXPAND = "Interface\\Buttons\\UI-PlusButton-"     -- plus brings the list back
-local SIZE_BUTTON = 16
+local SIZE_BUTTON = 22
 -- A long list stops above the chat box (or the screen edge) and scrolls.
 local CHAT_GAP, SCREEN_GAP, MIN_CAP = 28, 8, 160
 local WHEEL_STEP = 2                     -- lines per wheel tick
