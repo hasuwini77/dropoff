@@ -171,11 +171,23 @@ end
 
 -- The player right now, not as of the last pass, for what is placed at every
 -- frame: the game's world yards and the continent. Nil when unknown.
+-- Without HereBeDragons (TomTom disabled): the game's own map calls, as in
+-- Geo.BeginPass, on the map the player was last seen on.
 function Geo.PlayerNow()
     local hbd = player.hbd or HBD()
-    if not hbd then return nil end
-    local ok, x, y, instance = pcall(hbd.GetPlayerWorldPosition, hbd)
-    if ok and Usable(x) and Usable(y) and Usable(instance) then return y, x, instance end
+    if hbd then
+        local ok, x, y, instance = pcall(hbd.GetPlayerWorldPosition, hbd)
+        if ok and Usable(x) and Usable(y) and Usable(instance) then return y, x, instance end
+        return nil
+    end
+    if not (C_Map and C_Map.GetPlayerMapPosition and C_Map.GetWorldPosFromMapPos) then return nil end
+    local mapId = Geo.PlayerZone()
+    local position = mapId and Try(C_Map.GetPlayerMapPosition, mapId, "player")
+    if not position then return nil end
+    local continent, world = Try(C_Map.GetWorldPosFromMapPos, mapId, position)
+    if type(world) == "table" and Usable(world.x) and Usable(world.y) and Usable(continent) then
+        return world.x, world.y, continent
+    end
     return nil
 end
 
