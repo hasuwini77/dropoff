@@ -3,6 +3,7 @@
 ## 0.8.3
 
 - With the Combat Log tab picked, the window now stops above its filter bar ("My actions / What happened to me?") and the tabs, instead of covering them.
+- The minimap line now shows without TomTom too. It needed HereBeDragons, which comes with TomTom, to read where you stand; it now falls back to the game's own map calls.
 - The shrink / expand button is bigger, closer to the size of the close button.
 
 ## 0.8.2
