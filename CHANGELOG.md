@@ -1,5 +1,12 @@
 # Changelog
 
+## Unreleased
+
+- A welcome window on the first login, in four short steps: what DropOff solves, what it needs (Questie, TomTom, the three map addons, each checked live), two settings (minimap button, bag alert in chat), and how to open it. Skip, Close or finishing it sets a flag and it does not come back. It waits for the end of a fight.
+- `/dropoff welcome` opens it again at step 1.
+- New file `Welcome.lua`: the game must be fully restarted once, a /reload is not enough.
+- Not yet checked in game.
+
 ## 0.8.3
 
 - With the Combat Log tab picked, the window now stops above its filter bar ("My actions / What happened to me?") and the tabs, instead of covering them.
