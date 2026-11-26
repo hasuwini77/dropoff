@@ -213,7 +213,13 @@ local function Widget()
         lines[#lines + 1] = line
         return line
     end
-    function widget:Click(button) if self.scripts.OnClick then self.scripts.OnClick(self, button) end end
+    function widget:SetChecked(value) self.checked = value and true or false end
+    function widget:GetChecked() return self.checked or false end
+    -- A check box flips before its script runs, as in the game.
+    function widget:Click(button)
+        if self.isCheck then self.checked = not self.checked end
+        if self.scripts.OnClick then self.scripts.OnClick(self, button) end
+    end
     -- Anything else (SetPoint, SetSize, SetBackdrop...) is accepted and ignored.
     return setmetatable(widget, { __index = function() return function() end end })
 end
@@ -382,7 +388,8 @@ local function InstallGlobals()
     DEFAULT_CHAT_FRAME = { AddMessage = function(_, text) world.chat[#world.chat + 1] = text end }
     SlashCmdList = {}
     DropOffDB, DropOffCharDB = nil, nil
-    DropOffFrame = nil
+    DropOffFrame, DropOffWelcome = nil, nil
+    UISpecialFrames = {}
     ChatFrame1, ChatFrame2, CombatLogQuickButtonFrame_Custom = nil, nil, nil
     OpenMapAPI = nil
 
@@ -396,9 +403,10 @@ local function InstallGlobals()
         end,
     }
 
-    CreateFrame = function(_, name, parent)
+    CreateFrame = function(kind, name, parent)
         local frame = Widget()
         frame.parent = parent
+        frame.isCheck = kind == "CheckButton"
         if name then _G[name] = frame end
         return frame
     end
@@ -3669,6 +3677,258 @@ RealMaps("real maps: out of the Undercity the walk goes up a lift", function()
     check(leg.yards > 750 and leg.yards < 1050, "about 900 yards: " .. math.floor(leg.yards))
     check(type(answer.direct) == "number" and answer.direct > 1300, "not out through the sewers: " .. tostring(answer.direct))
     eq(#world.errors, 0, "the router raised nothing: " .. tostring(world.errors[1]))
+end)
+
+---------------------------------------------------------------------------
+-- The welcome window
+---------------------------------------------------------------------------
+
+local WELCOME_MAPS = { "DropOff_Paths_EasternKingdoms", "DropOff_Paths_Kalimdor", "DropOff_Paths_Zephras" }
+
+-- A fresh login: the addon loaded, the world entered.
+local function Login(saved)
+    Scene()
+    local ns = Load(saved)
+    Fire(ns, "PLAYER_ENTERING_WORLD")
+    return ns
+end
+
+-- The rows of step 2 by key.
+local function WelcomeRows(ns)
+    local by = {}
+    for _, row in ipairs(ns.Welcome.State().rows) do by[row.key] = row end
+    return by
+end
+
+test("welcome: shown once, a couple of seconds after the first login", function()
+    local ns = Login()
+    check(not ns.Welcome.IsShown(), "not at once")
+    Advance(2)
+    check(not ns.Welcome.IsShown(), "not after two seconds")
+    Advance(1.5)
+    check(ns.Welcome.IsShown(), "shown after three")
+    eq(ns.Welcome.State().step, 1, "at step 1")
+    eq(DropOffWelcome.counter:GetText(), "Step 1 of 4", "the counter")
+    eq(DropOffWelcome.title:GetText(), "Welcome to DropOff", "the title")
+    Fire(ns, "PLAYER_ENTERING_WORLD")
+    Advance(10)
+    eq(DropOffWelcome.next:GetText(), "Next", "a later loading screen does not start it again")
+    DropOffWelcome:Hide()
+    eq(DropOffDB.welcomed, true, "closing sets the flag")
+    -- The next session: the saved flag stops it.
+    local saved = DropOffDB
+    Login(saved)
+    Advance(10)
+    check(not DropOffWelcome or not DropOffWelcome:IsShown(), "not shown the second time")
+end)
+
+test("welcome: Esc closes it, and it is a window of its own", function()
+    local ns = Login()
+    Advance(3)
+    local listed = false
+    for _, name in ipairs(UISpecialFrames) do if name == "DropOffWelcome" then listed = true end end
+    check(listed, "Esc is wired through UISpecialFrames")
+    DropOffWelcome:Hide()
+    check(not ns.Welcome.IsShown(), "hidden")
+    check(DropOffDB.welcomed, "and done")
+    check(DropOffWelcome.scripts.OnDragStart ~= nil, "it can be dragged")
+end)
+
+test("welcome: waits for the end of a fight", function()
+    Scene()
+    world.combat = true
+    local ns = Load()
+    Fire(ns, "PLAYER_ENTERING_WORLD")
+    Advance(10)
+    check(not ns.Welcome.IsShown(), "not in combat")
+    check(ns.Welcome.State().waiting, "it waits")
+    world.combat = false
+    Fire(ns, "PLAYER_REGEN_ENABLED")
+    check(ns.Welcome.IsShown(), "shown when the fight ends")
+    eq(ns.Welcome.State().waiting, false, "no longer waiting")
+end)
+
+test("welcome: a fight ending with nothing waiting shows nothing", function()
+    local ns = Login(nil)
+    DropOffDB.welcomed = true
+    Advance(5)
+    Fire(ns, "PLAYER_REGEN_ENABLED")
+    check(not ns.Welcome.IsShown(), "nothing to show")
+end)
+
+test("welcome: Next, Back and Skip", function()
+    local ns = Login()
+    Advance(3)
+    local w = DropOffWelcome
+    check(not w.back:IsShown(), "no Back on the first step")
+    w.next:Click()
+    eq(ns.Welcome.State().step, 2, "Next: step 2")
+    check(w.back:IsShown(), "Back from step 2")
+    w.next:Click(); w.next:Click()
+    eq(ns.Welcome.State().step, 4, "step 4")
+    eq(w.counter:GetText(), "Step 4 of 4", "the counter follows")
+    eq(w.next:GetText(), "Open DropOff", "the last step opens DropOff")
+    eq(w.skip:GetText(), "Close", "and closes")
+    w.back:Click()
+    eq(ns.Welcome.State().step, 3, "Back: step 3")
+    eq(w.next:GetText(), "Next", "Next again")
+    eq(w.skip:GetText(), "Skip", "Skip again")
+    check(not DropOffDB.welcomed, "still not done")
+    w.skip:Click()
+    check(not ns.Welcome.IsShown(), "Skip closes")
+    eq(DropOffDB.welcomed, true, "and sets the flag")
+end)
+
+test("welcome: the last step's Close sets the flag too", function()
+    local ns = Login()
+    Advance(3)
+    ns.Welcome.Show(4)
+    DropOffWelcome.skip:Click()
+    check(not ns.Welcome.IsShown(), "closed")
+    eq(DropOffDB.welcomed, true, "flag set")
+    check(not ns.IsOpen(), "the main window was not opened")
+end)
+
+test("welcome: step 2 says what is found and what is missing", function()
+    local ns = Login()
+    world.mapAddons = { [WELCOME_MAPS[1]] = true, [WELCOME_MAPS[2]] = "DISABLED" }
+    Advance(3)
+    DropOffWelcome.next:Click()
+    local rows = WelcomeRows(ns)
+    eq(rows.questie.found, true, "Questie found")
+    eq(rows.questie.text, "Found: hand-in locations work.", "its line")
+    eq(rows.tomtom.found, true, "TomTom found")
+    eq(rows[WELCOME_MAPS[1]].found, true, "Eastern Kingdoms enabled")
+    eq(rows[WELCOME_MAPS[2]].found, false, "Kalimdor disabled")
+    eq(rows[WELCOME_MAPS[3]].found, false, "Zephras missing")
+    eq(rows[WELCOME_MAPS[3]].text, "Not enabled: walks are as the crow flies.", "its line")
+    eq(#ns.Welcome.State().rows, 5, "five rows")
+end)
+
+test("welcome: step 2 without Questie and TomTom", function()
+    Scene()
+    world.questieDB, world.questie, world.tomtom = false, false, false
+    local ns = Load()
+    ns.Welcome.Show(2)
+    local rows = WelcomeRows(ns)
+    eq(rows.questie.found, false, "Questie missing")
+    eq(rows.questie.text, "Missing: the list works, no directions.", "its line")
+    eq(rows.tomtom.found, false, "TomTom missing")
+    eq(rows.tomtom.text, "Not found: the game's map pin is used instead.", "its line")
+    for _, name in ipairs(WELCOME_MAPS) do world.mapAddons[name] = true end
+    ns.Welcome.Show(2)
+    rows = WelcomeRows(ns)
+    for _, name in ipairs(WELCOME_MAPS) do eq(rows[name].found, true, name .. " enabled") end
+    -- Another step leaves no rows behind.
+    DropOffWelcome.next:Click()
+    eq(#ns.Welcome.State().rows, 0, "no rows on step 3")
+end)
+
+test("welcome: step 2 survives a game without the addon calls", function()
+    Scene()
+    local ns = Load()
+    C_AddOns = nil
+    GetAddOnInfo = nil
+    ns.Welcome.Show(2)
+    eq(#ns.Welcome.State().rows, 5, "still five rows")
+    eq(WelcomeRows(ns)[WELCOME_MAPS[1]].found, false, "read as not enabled")
+    C_AddOns = { GetAddOnInfo = function() error("boom") end }
+    ns.Welcome.Show(2)
+    eq(WelcomeRows(ns)[WELCOME_MAPS[1]].found, false, "a throwing call is read as not enabled")
+end)
+
+test("welcome: step 2 reads the game's enable state when it has one", function()
+    Scene()
+    local ns = Load()
+    C_AddOns.GetAddOnEnableState = function(name) return name == WELCOME_MAPS[3] and 2 or 0 end
+    world.mapAddons = { [WELCOME_MAPS[1]] = true, [WELCOME_MAPS[3]] = true }
+    ns.Welcome.Show(2)
+    local rows = WelcomeRows(ns)
+    eq(rows[WELCOME_MAPS[1]].found, false, "installed but switched off")
+    eq(rows[WELCOME_MAPS[3]].found, true, "switched on")
+    eq(rows[WELCOME_MAPS[2]].found, false, "not installed")
+end)
+
+test("welcome: the two check boxes change the settings at once", function()
+    local ns = Login()
+    Advance(3)
+    DropOffWelcome.next:Click(); DropOffWelcome.next:Click()
+    eq(ns.Welcome.State().step, 3, "step 3")
+    local w = DropOffWelcome
+    eq(w.minimap:GetChecked(), true, "minimap box starts ticked")
+    eq(w.alert:GetChecked(), true, "alert box starts ticked")
+    check(DropOffMinimapButton:IsShown(), "the icon is on the minimap")
+    w.minimap:Click()
+    eq(DropOffDB.minimap.hide, true, "unticked: hidden")
+    check(not DropOffMinimapButton:IsShown(), "the icon went away")
+    w.minimap:Click()
+    eq(DropOffDB.minimap.hide, nil, "ticked: shown again")
+    check(DropOffMinimapButton:IsShown(), "the icon is back")
+    w.alert:Click()
+    eq(DropOffDB.alert, false, "alert off")
+    w.alert:Click()
+    eq(DropOffDB.alert, true, "alert on")
+end)
+
+test("welcome: the boxes show the saved settings", function()
+    local ns = Login()
+    DropOffDB.minimap.hide = true
+    DropOffDB.alert = false
+    ns.Welcome.Show(3)
+    eq(DropOffWelcome.minimap:GetChecked(), false, "icon hidden: box empty")
+    eq(DropOffWelcome.alert:GetChecked(), false, "alert off: box empty")
+end)
+
+test("welcome: /dropoff welcome reopens it at step 1", function()
+    local ns = Login()
+    Advance(3)
+    DropOffWelcome.next:Click(); DropOffWelcome.next:Click()
+    DropOffWelcome:Hide()
+    SlashCmdList.DROPOFF("welcome")
+    check(ns.Welcome.IsShown(), "shown")
+    eq(ns.Welcome.State().step, 1, "at step 1")
+    SlashCmdList.DROPOFF("  WELCOME ")
+    eq(ns.Welcome.State().step, 1, "also in capitals")
+end)
+
+test("welcome: /dropoff help lists welcome", function()
+    local ns = Login()
+    SlashCmdList.DROPOFF("help")
+    check(ChatHas("welcome"), "help mentions welcome")
+end)
+
+test("welcome: Open DropOff opens the list and closes the welcome", function()
+    local ns = Login()
+    Advance(3)
+    ns.Welcome.Show(4)
+    check(not ns.IsOpen(), "the list is closed")
+    DropOffWelcome.next:Click()
+    check(ns.IsOpen(), "the list is open")
+    check(not ns.Welcome.IsShown(), "the welcome is closed")
+    eq(DropOffDB.welcomed, true, "and done")
+end)
+
+test("welcome: in French", function()
+    Scene()
+    world.locale = "frFR"
+    local ns = Load()
+    ns.Welcome.Show(1)
+    eq(DropOffWelcome.title:GetText(), "Bienvenue dans DropOff", "the title")
+    eq(DropOffWelcome.counter:GetText(), "Étape 1 sur 4", "the counter")
+    eq(DropOffWelcome.next:GetText(), "Suivant", "Next")
+    eq(DropOffWelcome.skip:GetText(), "Passer", "Skip")
+    for _, step in ipairs({ 1, 3, 4 }) do
+        check(ns.L["WELCOME_" .. step .. "_BODY"] ~= "WELCOME_" .. step .. "_BODY", "step " .. step .. " has a body")
+        check(not ns.L["WELCOME_" .. step .. "_BODY"]:find("!"), "no exclamation mark in step " .. step)
+    end
+end)
+
+test("welcome: a closed window opened by /dropoff welcome is not blocked by the flag", function()
+    local ns = Login({ welcomed = true })
+    Advance(10)
+    check(not ns.Welcome.IsShown(), "not shown by itself")
+    SlashCmdList.DROPOFF("welcome")
+    check(ns.Welcome.IsShown(), "shown on request")
 end)
 
 ---------------------------------------------------------------------------
