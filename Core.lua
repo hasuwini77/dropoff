@@ -365,6 +365,8 @@ local function Slash(message)
     elseif command == "alert" then
         DropOffDB.alert = not DropOffDB.alert
         ns.Print(DropOffDB.alert and L.MSG_ALERT_ON or L.MSG_ALERT_OFF)
+    elseif command == "welcome" then
+        ns.Welcome.Show(1)
     elseif command == "debug" then
         Snapshot()
     else
@@ -392,6 +394,7 @@ ns.eventFrame = frame
 local EVENTS = {
     "ADDON_LOADED",
     "PLAYER_ENTERING_WORLD",
+    "PLAYER_REGEN_ENABLED",
     "BAG_UPDATE_DELAYED",
     "QUEST_LOG_UPDATE",
     "QUEST_ACCEPTED",
@@ -417,7 +420,14 @@ frame:SetScript("OnEvent", function(_, event, arg1)
     end
     if type(DropOffDB) ~= "table" then InitDB() end
 
+    if event == "PLAYER_REGEN_ENABLED" then
+        -- The welcome window waits for the fight to end.
+        if ns.Welcome then pcall(ns.Welcome.OnCombatEnd) end
+        return
+    end
+
     if event == "PLAYER_ENTERING_WORLD" then
+        if ns.Welcome then pcall(ns.Welcome.OnWorld) end
         -- Placed again: the minimap may have been resized since the addon loaded.
         pcall(ns.MinimapButton.Refresh)
         if DropOffCharDB.open and not ns.IsOpen() then
