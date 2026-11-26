@@ -627,7 +627,10 @@ local function InstallGlobals()
                 friendlyToFaction = reader("npcs", "friendlyToFaction"),
             },
             Object = { name = reader("objects", "name"), spawns = reader("objects", "spawns") },
-            Item = { name = reader("items", "name"), startQuest = reader("items", "startQuest") },
+            Item = {
+                name = reader("items", "name"), startQuest = reader("items", "startQuest"),
+                relatedQuests = reader("items", "relatedQuests"), questRewards = reader("items", "questRewards"),
+            },
         }
     end
 
@@ -959,6 +962,40 @@ test("an item that starts an already completed quest is a plain leftover", funct
     Put(600, 1)
     local ns = Load()
     check(not ns.Plan.Build().orphans[1].starts, "not flagged as a quest starter")
+end)
+
+test("a quest item is only called droppable when the database proves it", function()
+    Scene()
+    world.items[610] = { name = "Engineers Membership Card", class = 12 }
+    world.items[611] = { name = "Sealed Orders", class = 12 }
+    world.items[612] = { name = "Warsong Report", class = 12 }
+    world.items[613] = { name = "Odd Trinket", class = 12 }
+    world.db.items[610] = { questRewards = { 500 } }            -- earned, kept for good
+    world.db.items[611] = { relatedQuests = { 501 } }           -- for a quest not taken yet
+    world.db.items[612] = { relatedQuests = { 502, 503 } }      -- both handed in
+    world.completed[502], world.completed[503] = true, true
+    Put(610, 1); Put(611, 1); Put(612, 2); Put(613, 1)
+    local ns = Load()
+    local byName = {}
+    for _, item in ipairs(ns.Plan.Build().orphans) do byName[item.name] = item end
+    check(byName["Engineers Membership Card"] == nil, "a quest reward is never offered for the bin")
+    check(byName["Sealed Orders"] == nil, "an item for a quest still to do is kept off the list")
+    eq(byName["Warsong Report"] and byName["Warsong Report"].status, "done", "all its quests handed in: droppable")
+    eq(byName["Odd Trinket"] and byName["Odd Trinket"].status, "unknown", "unknown to the database: check first")
+
+    world.completed[503] = nil
+    byName = {}
+    for _, item in ipairs(ns.Plan.Build().orphans) do byName[item.name] = item end
+    check(byName["Warsong Report"] == nil, "one of its quests still open: kept")
+
+    world.completed[503] = true
+    ns.Toggle()
+    local subs = {}
+    for _, line in ipairs(ns.UI.Lines(ns.state.plan)) do
+        if line.title then subs[line.title] = line.sub end
+    end
+    eq(subs["Warsong Report"], ns.L.ORPHAN_DONE, "says it can go")
+    eq(subs["Odd Trinket"], ns.L.ORPHAN_LEFTOVER, "says to check first")
 end)
 
 test("an item shared by two finished quests frees its slots once", function()
