@@ -1011,6 +1011,35 @@ test("a quest item is only called droppable when the database proves it", functi
     eq(subs["Odd Trinket"], ns.L.ORPHAN_LEFTOVER, "says to check first")
 end)
 
+test("+N more opens the rest of a section, and Show less closes it", function()
+    Scene()
+    for id = 620, 626 do
+        world.items[id] = { name = "Odd Trinket " .. id, class = 12 }
+        Put(id, 1)
+    end
+    local ns = Load()
+    ns.Toggle()
+    local function orphanRows()
+        local count = 0
+        for _, line in ipairs(ns.UI.Lines(ns.state.plan)) do
+            if line.kind == "row" and line.title and line.title:find("Odd Trinket", 1, true) then count = count + 1 end
+        end
+        return count
+    end
+    eq(orphanRows(), 4, "four shown at first")
+    local toggle
+    for _, t in ipairs(ns.UI.Toggles()) do if t.section == "orphans" then toggle = t end end
+    check(toggle, "a clickable line under them")
+    eq(toggle.label:GetText(), ns.L.MORE:format(3), "it says how many are hidden")
+    toggle:Click()
+    eq(orphanRows(), 7, "all seven after the click")
+    toggle = nil
+    for _, t in ipairs(ns.UI.Toggles()) do if t.section == "orphans" then toggle = t end end
+    eq(toggle.label:GetText(), ns.L.LESS, "the line now closes them")
+    toggle:Click()
+    eq(orphanRows(), 4, "back to four")
+end)
+
 test("an item shared by two finished quests frees its slots once", function()
     Scene()
     world.db.quests[3].objectives = { nil, nil, { { 100 } } }
@@ -1337,7 +1366,7 @@ test("the small window shows only the next hand-in, and keeps guiding", function
     check(not DropOffFrame.summary:IsShown(), "no summary line")
     check(DropOffFrame.height < full / 2, "much smaller: " .. DropOffFrame.height .. " against " .. full)
     eq(#LiveWaypoints(), 1, "the arrow is still there")
-    check(HasLabel(ns, ns.L.MORE:format(3)), "and it says how many more are waiting")
+    check(HasLabel(ns, ns.L.OTHERS:format(3)), "and it says how many more are waiting")
 
     Advance(10)
     eq(#ns.UI.Rows(), 1, "still one row after the refreshes")
