@@ -453,7 +453,7 @@ function UI.Lines(plan, compact)
             lines[#lines + 1] = {
                 kind = "row", height = ROW_HEIGHT, dim = true,
                 icon = item.icon or ICON_UNKNOWN, title = item.name, titleColour = WHITE,
-                sub = item.starts and L.ORPHAN_STARTS or L.ORPHAN_LEFTOVER,
+                sub = item.starts and L.ORPHAN_STARTS or item.status == "done" and L.ORPHAN_DONE or L.ORPHAN_LEFTOVER,
                 right = "", badge = "x" .. item.count, badgeColour = GREY,
             }
         end

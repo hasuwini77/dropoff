@@ -195,14 +195,35 @@ function Plan.Build()
     table.sort(ready, ByRoute)
     table.sort(progress, BySlots)
 
-    -- 4. Leftovers: quest items no quest in the log wants.
+    -- 4. Leftovers: quest items no quest in the log wants. Only tell the
+    --    player an item can go when the database proves it: every quest that
+    --    uses it is handed in. An item for a quest not taken yet, or one a
+    --    quest gives as a reward (a membership card), is kept off the list.
+    local function Completed(questID)
+        local fn = C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted or rawget(_G, "IsQuestFlaggedCompleted")
+        return type(fn) == "function" and ns.Try(fn, questID) == true
+    end
+    local leftovers, kept = {}, {}
     for _, item in ipairs(loose) do
         local startsQuest = Data.ItemStartsQuest(item.id)
-        if startsQuest then
-            local done = C_QuestLog and ns.Try(C_QuestLog.IsQuestFlaggedCompleted, startsQuest)
-            item.starts = not done
+        local quests, reward = Data.ItemQuests(item.id)
+        if startsQuest and not Completed(startsQuest) then
+            item.starts, item.status = true, "starts"
+        elseif not quests then
+            item.status = "unknown"
+        elseif not reward and #quests > 0 then
+            local all = true
+            for _, questID in ipairs(quests) do
+                if not Completed(questID) then all = false; break end
+            end
+            item.status = all and "done" or "keep"
+        else
+            item.status = "keep"
         end
+        item.quests, item.reward = quests, reward
+        if item.status ~= "keep" then leftovers[#leftovers + 1] = item else kept[#kept + 1] = item end
     end
+    loose = leftovers
     table.sort(loose, BySlots)
 
     -- An item shared by two finished quests still frees its slots only once.
@@ -214,6 +235,7 @@ function Plan.Build()
         ready = ready,
         progress = progress,
         orphans = loose,
+        kept = kept,
         tied = tied,
         free = free,
         readySlots = readySlots,

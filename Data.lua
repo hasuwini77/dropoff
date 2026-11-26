@@ -120,6 +120,28 @@ function Data.ItemStartsQuest(itemID)
     return nil
 end
 
+-- What the database says about a quest item: the quests that use it (the one
+-- it starts included), and whether some quest gives it as a reward. Returns
+-- nil when there is no database or it knows nothing of the item.
+function Data.ItemQuests(itemID)
+    local db = Data.DB()
+    if not db or type(db.Item) ~= "table" then return nil end
+    local quests, seen = {}, {}
+    local function add(questID)
+        if type(questID) == "number" and questID > 0 and not seen[questID] then
+            seen[questID] = true
+            quests[#quests + 1] = questID
+        end
+    end
+    add(Try(db.Item.startQuest, itemID))
+    local related = db.Item.relatedQuests and Try(db.Item.relatedQuests, itemID)
+    if type(related) == "table" then for _, questID in ipairs(related) do add(questID) end end
+    local rewards = db.Item.questRewards and Try(db.Item.questRewards, itemID)
+    local reward = type(rewards) == "table" and #rewards > 0
+    if #quests == 0 and not reward then return nil end
+    return quests, reward
+end
+
 ---------------------------------------------------------------------------
 -- Items
 ---------------------------------------------------------------------------
@@ -342,6 +364,16 @@ function Data.DebugDump()
     local plan = ns.Plan.Build()
     dump.free = plan.free
     dump.readySlots = plan.readySlots
+    -- Quest items no quest in the log wants, and why each is listed or kept.
+    dump.leftovers = {}
+    for _, list in ipairs({ plan.orphans, plan.kept or {} }) do
+        for _, item in ipairs(list) do
+            dump.leftovers[#dump.leftovers + 1] = {
+                id = item.id, name = item.name, status = item.status,
+                quests = item.quests, reward = item.reward or nil,
+            }
+        end
+    end
     dump.hiddenQuests = plan.hidden
 
     for _, quest in ipairs(plan.all) do

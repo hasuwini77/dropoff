@@ -6,6 +6,8 @@
 - `/dropoff welcome` opens it again at step 1.
 - New file `Welcome.lua`: the game must be fully restarted once, a /reload is not enough.
 - Not yet checked in game.
+- The "quest items without a quest" list no longer tells you to drop things you need. An item now says it can go only when QuestieDB shows every quest that uses it is handed in. Items for quests you have not taken yet, and items a quest gives as a reward (an engineers' membership card), are left off the list. Items the database does not know say "check before you drop it".
+- `/dropoff debug` now records each of those items and why it is listed or kept.
 
 ## 0.8.3
 
