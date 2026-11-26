@@ -539,36 +539,6 @@ function Route.FirstLeg(legs, carried)
     return nil
 end
 
----------------------------------------------------------------------------
--- Auto-flight
----------------------------------------------------------------------------
-
--- On the open flight map: the slot of the flight the trip starts with, and
--- the name of its destination. The leg is the trip's first, or the one after
--- the walk to this very flight master. Nodes are matched by their name in the
--- client's language, as Route.NodeName gives it, the way RecordTaxiMap does.
--- Nil when this is not that flight master, or the destination is not
--- reachable from here (an unknown flight is never planned either).
-function Route.AutoFlySlot(legs)
-    local leg = legs and legs[1]
-    if leg and leg.kind == "walk" and leg.to.node and legs[2] and legs[2].kind == "fly"
-        and legs[2].from.node == leg.to.node then
-        leg = legs[2]
-    end
-    if not leg or leg.kind ~= "fly" or not leg.from.node or not leg.to.node then return nil end
-    if type(NumTaxiNodes) ~= "function" or type(TaxiNodeName) ~= "function"
-        or type(TaxiNodeGetType) ~= "function" then return nil end
-    local here, goal = Route.NodeName(leg.from.node), Route.NodeName(leg.to.node)
-    if not here or not goal then return nil end
-    local slotHere, slotGoal
-    for slot = 1, Try(NumTaxiNodes) or 0 do
-        local name, kind = Try(TaxiNodeName, slot), Try(TaxiNodeGetType, slot)
-        if name == here and kind == "CURRENT" then slotHere = slot end
-        if name == goal and kind == "REACHABLE" and not slotGoal then slotGoal = slot end
-    end
-    if not slotHere or not slotGoal then return nil end
-    return slotGoal, Short(goal)
-end
 
 ---------------------------------------------------------------------------
 -- Learning which flight masters the character knows
@@ -586,6 +556,55 @@ local function IsLearned(info)
         return info.state == states.Current or info.state == states.Reachable, info.state == states.Current
     end
     return info.state == 0 or info.state == 1, info.state == 0
+end
+
+---------------------------------------------------------------------------
+-- Auto-flight
+---------------------------------------------------------------------------
+
+-- On the open flight map: the slot of the flight the trip starts with, and
+-- the name of its destination. The leg is the trip's first, or the one after
+-- the walk to this very flight master. Nodes are matched by their name in the
+-- client's language, as Route.NodeName gives it, the way RecordTaxiMap does.
+-- Nil when this is not that flight master, or the destination is not
+-- reachable from here (an unknown flight is never planned either).
+function Route.AutoFlySlot(legs)
+    local leg = legs and legs[1]
+    if leg and leg.kind == "walk" and leg.to.node and legs[2] and legs[2].kind == "fly"
+        and legs[2].from.node == leg.to.node then
+        leg = legs[2]
+    end
+    if not leg or leg.kind ~= "fly" or not leg.from.node or not leg.to.node then return nil end
+    -- By node ID first, as RecordTaxiMap reads the map: no name to compare.
+    if type(C_TaxiMap) == "table" and type(C_TaxiMap.GetAllTaxiNodes) == "function" then
+        local mapId = type(GetTaxiMapID) == "function" and Try(GetTaxiMapID)
+        if type(mapId) ~= "number" then mapId = C_Map and Try(C_Map.GetBestMapForUnit, "player") end
+        local list = type(mapId) == "number" and Try(C_TaxiMap.GetAllTaxiNodes, mapId)
+        if type(list) == "table" then
+            local atHere, goalSlot
+            for _, info in ipairs(list) do
+                if type(info) == "table" then
+                    local known, current = IsLearned(info)
+                    if info.nodeID == leg.from.node and current then atHere = true end
+                    if info.nodeID == leg.to.node and known and not current
+                        and type(info.slotIndex) == "number" then goalSlot = info.slotIndex end
+                end
+            end
+            if atHere and goalSlot then return goalSlot, Short(Route.NodeName(leg.to.node) or "") end
+        end
+    end
+    if type(NumTaxiNodes) ~= "function" or type(TaxiNodeName) ~= "function"
+        or type(TaxiNodeGetType) ~= "function" then return nil end
+    local here, goal = Route.NodeName(leg.from.node), Route.NodeName(leg.to.node)
+    if not here or not goal then return nil end
+    local slotHere, slotGoal
+    for slot = 1, Try(NumTaxiNodes) or 0 do
+        local name, kind = Try(TaxiNodeName, slot), Try(TaxiNodeGetType, slot)
+        if name == here and kind == "CURRENT" then slotHere = slot end
+        if name == goal and kind == "REACHABLE" and not slotGoal then slotGoal = slot end
+    end
+    if not slotHere or not slotGoal then return nil end
+    return slotGoal, Short(goal)
 end
 
 -- Reads the open flight map: the masters it lists as learned are the ones the

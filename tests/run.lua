@@ -1891,6 +1891,14 @@ test("auto-flight takes the suggested flight and says so", function()
     check(ChatHas("DropOff: flying to Tarren Mill (hold Shift to choose yourself)"), "the chat line")
 end)
 
+test("auto-flight finds the slot by node ID when the map gives one", function()
+    local ns = AutoFlyScene(true)
+    world.taxiNodes = { { nodeID = 17, state = 0, slotIndex = 5 }, { nodeID = 13, state = 1, slotIndex = 9 } }
+    world.slots = {}
+    Fire(ns, "TAXIMAP_OPENED")
+    eq(world.taken[1], 9, "the slot the map gives for Tarren Mill")
+end)
+
 test("auto-flight matches the node by the client's language", function()
     local ns = AutoFlyScene(true, true)
     world.slots = { { "Fossé-du-Marteau, Arathi", "CURRENT" }, { "Moulin-de-Tarren, Hautebrande", "REACHABLE" } }
