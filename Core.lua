@@ -14,6 +14,7 @@ ns.state = {
 local DEFAULTS = {
     alert = true,     -- chat hint when bags are nearly full and turn-ins would free slots
     alertFree = 4,    -- "nearly full" = this many free slots or fewer
+    autoFly = false,  -- take the suggested flight when the player opens that flight master's map
 }
 
 local LOG_MAX = 200
@@ -231,6 +232,24 @@ local function Carried()
     return nil
 end
 
+-- Opt-in auto-flight. Runs only from TAXIMAP_OPENED, which the player starts by
+-- right-clicking a flight master: it picks the suggested destination on the
+-- open map and nothing else. It never targets an NPC and never moves the player.
+function ns.AutoFly()
+    if not DropOffDB.autoFly or not ns.IsOpen() then return end
+    if ns.Try(IsShiftKeyDown) then return end
+    local plan = ns.state.plan
+    if not plan or plan.carried then return end
+    local legs
+    for _, quest in ipairs(plan.ready) do
+        if quest.id == plan.current then legs = quest.target and quest.target.legs end
+    end
+    local slot, name = ns.Route.AutoFlySlot(legs)
+    if not slot then return end
+    ns.Try(TakeTaxiNode, slot)
+    ns.Print(L.MSG_FLY_TAKING:format(name))
+end
+
 function ns.Refresh()
     -- While a flight or a crossing carries the player, the trip is the one
     -- chosen before boarding: planning from mid-air or mid-sea would send the
@@ -365,6 +384,9 @@ local function Slash(message)
     elseif command == "alert" then
         DropOffDB.alert = not DropOffDB.alert
         ns.Print(DropOffDB.alert and L.MSG_ALERT_ON or L.MSG_ALERT_OFF)
+    elseif command == "fly" then
+        DropOffDB.autoFly = not DropOffDB.autoFly
+        ns.Print(DropOffDB.autoFly and L.MSG_FLY_ON or L.MSG_FLY_OFF)
     elseif command == "welcome" then
         ns.Welcome.Show(1)
     elseif command == "debug" then
@@ -443,6 +465,8 @@ frame:SetScript("OnEvent", function(_, event, arg1)
         -- The flight map lists the flight masters this character knows.
         local ok, read = pcall(ns.Route.RecordTaxiMap)
         if not ok then ns.Log("flight map error: %s", tostring(read)) end
+        local flown, err = pcall(ns.AutoFly)
+        if not flown then ns.Log("auto-flight error: %s", tostring(err)) end
         if not (ok and read) then return end
     end
 

@@ -205,14 +205,17 @@ local function Build()
 
     for index = 1, #MAPS + 2 do rows[index] = NewRow(index) end
 
-    frame.minimap = NewCheck(L.WELCOME_OPT_MINIMAP, -(BODY_TOP + 48), function(checked)
+    frame.minimap = NewCheck(L.WELCOME_OPT_MINIMAP, -(BODY_TOP + 44), function(checked)
         if type(DropOffDB) ~= "table" then return end
         DropOffDB.minimap = type(DropOffDB.minimap) == "table" and DropOffDB.minimap or {}
         DropOffDB.minimap.hide = (not checked) and true or nil
         if ns.MinimapButton then ns.MinimapButton.Refresh() end
     end)
-    frame.alert = NewCheck(L.WELCOME_OPT_ALERT, -(BODY_TOP + 88), function(checked)
+    frame.alert = NewCheck(L.WELCOME_OPT_ALERT, -(BODY_TOP + 84), function(checked)
         if type(DropOffDB) == "table" then DropOffDB.alert = checked end
+    end)
+    frame.fly = NewCheck(L.WELCOME_OPT_FLY, -(BODY_TOP + 124), function(checked)
+        if type(DropOffDB) == "table" then DropOffDB.autoFly = checked end
     end)
 
     frame.close = CreateFrame("Button", nil, frame, "UIPanelCloseButton")
@@ -270,7 +273,7 @@ local function Paint()
         end
     end
 
-    -- Steps 1, 3 and 4 are text. Step 3 has its two boxes under a line.
+    -- Steps 1, 3 and 4 are text. Step 3 has its three boxes under a line.
     if step == 2 then
         frame.body:SetText("")
     else
@@ -284,10 +287,13 @@ local function Paint()
     frame.minimap.label:SetShown(settings)
     frame.alert:SetShown(settings)
     frame.alert.label:SetShown(settings)
+    frame.fly:SetShown(settings)
+    frame.fly.label:SetShown(settings)
     if settings then
         local db = type(DropOffDB) == "table" and DropOffDB or {}
         frame.minimap:SetChecked(not (type(db.minimap) == "table" and db.minimap.hide))
         frame.alert:SetChecked(db.alert and true or false)
+        frame.fly:SetChecked(db.autoFly and true or false)
     end
 
     frame.back:SetShown(step > 1)

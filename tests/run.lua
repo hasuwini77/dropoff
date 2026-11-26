@@ -372,6 +372,13 @@ local function InstallGlobals()
         GetAllTaxiNodes = function() return world.taxiNodes or {} end,
         GetTaxiNodesForMap = function() return world.localNames or {} end,
     }
+    -- The old flight map: world.slots = { { name, type }, ... }.
+    world.taken = {}
+    NumTaxiNodes = function() return #(world.slots or {}) end
+    TaxiNodeName = function(slot) return world.slots[slot][1] end
+    TaxiNodeGetType = function(slot) return world.slots[slot][2] end
+    TakeTaxiNode = function(slot) world.taken[#world.taken + 1] = slot end
+    IsShiftKeyDown = function() return world.shift or false end
     issecretvalue = function(value) return value == SECRET end
     NUM_BAG_SLOTS = 4
     UIParent = Widget()
@@ -1845,6 +1852,101 @@ test("the flight map tells which flight masters are known", function()
     Fire(ns, "TAXIMAP_OPENED")
     check(DropOffCharDB.flights[13] and DropOffCharDB.flights[11] and DropOffCharDB.flights[17],
         "a partial list adds, it does not remove")
+end)
+
+-- Standing at Hammerfall with the trip's first leg a flight to Tarren Mill.
+local function AutoFlyScene(on, french)
+    TravelScene()
+    if french then
+        world.localNames = { { nodeID = 17, name = "Fossé-du-Marteau, Arathi" }, { nodeID = 13, name = "Moulin-de-Tarren, Hautebrande" } }
+    end
+    local ns = Load()
+    if on then DropOffDB.autoFly = true end
+    ns.Toggle()
+    world.taxiNodes = { { nodeID = 17, state = 0 }, { nodeID = 13, state = 1 } }
+    world.slots = {
+        { "Undercity, Tirisfal", "REACHABLE" },
+        { "Hammerfall, Arathi", "CURRENT" },
+        { "Tarren Mill, Hillsbrad", "REACHABLE" },
+    }
+    Fire(ns, "TAXIMAP_OPENED")
+    Advance(1)
+    eq(ns.state.plan.ready[1].target.legs[1].kind, "fly", "the trip starts with a flight")
+    world.chat, world.taken = {}, {}
+    return ns
+end
+
+test("auto-flight is off by default and takes nothing", function()
+    local ns = AutoFlyScene()
+    eq(DropOffDB.autoFly, false, "off by default")
+    Fire(ns, "TAXIMAP_OPENED")
+    eq(#world.taken, 0, "nothing taken")
+end)
+
+test("auto-flight takes the suggested flight and says so", function()
+    local ns = AutoFlyScene(true)
+    Fire(ns, "TAXIMAP_OPENED")
+    eq(#world.taken, 1, "one flight taken")
+    eq(world.taken[1], 3, "the Tarren Mill slot")
+    check(ChatHas("DropOff: flying to Tarren Mill (hold Shift to choose yourself)"), "the chat line")
+end)
+
+test("auto-flight matches the node by the client's language", function()
+    local ns = AutoFlyScene(true, true)
+    world.slots = { { "Fossé-du-Marteau, Arathi", "CURRENT" }, { "Moulin-de-Tarren, Hautebrande", "REACHABLE" } }
+    Fire(ns, "TAXIMAP_OPENED")
+    eq(world.taken[1], 2, "the French slot")
+end)
+
+test("auto-flight does nothing with Shift held", function()
+    local ns = AutoFlyScene(true)
+    world.shift = true
+    Fire(ns, "TAXIMAP_OPENED")
+    eq(#world.taken, 0, "nothing taken")
+    eq(#world.chat, 0, "and nothing said")
+end)
+
+test("auto-flight does nothing when the destination is not reachable", function()
+    local ns = AutoFlyScene(true)
+    world.slots[3][2] = "UNREACHABLE"
+    Fire(ns, "TAXIMAP_OPENED")
+    eq(#world.taken, 0, "nothing taken")
+end)
+
+test("auto-flight does nothing when the window is closed", function()
+    local ns = AutoFlyScene(true)
+    ns.Toggle()
+    check(not ns.IsOpen(), "closed")
+    Fire(ns, "TAXIMAP_OPENED")
+    eq(#world.taken, 0, "nothing taken")
+end)
+
+test("auto-flight does nothing when the next leg is not a flight", function()
+    TravelScene(HAMMERFALL[1] - 200, HAMMERFALL[2])
+    local ns = Load()
+    DropOffDB.autoFly = true
+    ns.Toggle()
+    eq(ns.state.plan.ready[1].target.legs[1].kind, "walk", "on foot first")
+    world.taxiNodes = { { nodeID = 17, state = 1 }, { nodeID = 13, state = 1 } }
+    world.slots = { { "Hammerfall, Arathi", "REACHABLE" }, { "Tarren Mill, Hillsbrad", "REACHABLE" } }
+    world.chat, world.taken = {}, {}
+    Fire(ns, "TAXIMAP_OPENED")
+    eq(#world.taken, 0, "nothing taken: this is not the flight master the trip starts at")
+end)
+
+test("/dropoff fly toggles auto-flight", function()
+    Scene()
+    local ns = Load()
+    eq(DropOffDB.autoFly, false, "off")
+    SlashCmdList.DROPOFF("fly")
+    eq(DropOffDB.autoFly, true, "on")
+    check(ChatHas("auto-flight on"), "says on")
+    SlashCmdList.DROPOFF("fly")
+    eq(DropOffDB.autoFly, false, "off again")
+    check(ChatHas("auto-flight off"), "says off")
+    world.chat = {}
+    SlashCmdList.DROPOFF("nonsense")
+    check(ChatHas("fly"), "the help line lists it")
 end)
 
 test("an Alliance character takes boats, never a zeppelin", function()
@@ -3912,6 +4014,20 @@ test("welcome: the two check boxes change the settings at once", function()
     eq(DropOffDB.alert, false, "alert off")
     w.alert:Click()
     eq(DropOffDB.alert, true, "alert on")
+end)
+
+test("welcome: the third box sets auto-flight", function()
+    local ns = Login()
+    ns.Welcome.Show(3)
+    local w = DropOffWelcome
+    eq(w.fly:GetChecked(), false, "starts empty")
+    w.fly:Click()
+    eq(DropOffDB.autoFly, true, "ticked: on")
+    w.fly:Click()
+    eq(DropOffDB.autoFly, false, "unticked: off")
+    DropOffDB.autoFly = true
+    ns.Welcome.Show(3)
+    eq(w.fly:GetChecked(), true, "shows the saved setting")
 end)
 
 test("welcome: the boxes show the saved settings", function()
