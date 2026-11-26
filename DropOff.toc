@@ -33,3 +33,4 @@ Nav.lua
 Trail.lua
 UI.lua
 MinimapButton.lua
+Welcome.lua
