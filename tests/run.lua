@@ -379,6 +379,12 @@ local function InstallGlobals()
     TaxiNodeGetType = function(slot) return world.slots[slot][2] end
     TakeTaxiNode = function(slot) world.taken[#world.taken + 1] = slot end
     IsShiftKeyDown = function() return world.shift or false end
+    world.gossip, world.picked = nil, {}
+    C_GossipInfo = {
+        GetOptions = function() return world.gossip and world.gossip.options or {} end,
+        GetActiveQuests = function() return world.gossip and world.gossip.active or {} end,
+        SelectOption = function(id) world.picked[#world.picked + 1] = id end,
+    }
     issecretvalue = function(value) return value == SECRET end
     NUM_BAG_SLOTS = 4
     UIParent = Widget()
@@ -1940,6 +1946,50 @@ test("auto-flight does nothing when the next leg is not a flight", function()
     world.chat, world.taken = {}, {}
     Fire(ns, "TAXIMAP_OPENED")
     eq(#world.taken, 0, "nothing taken: this is not the flight master the trip starts at")
+end)
+
+local TAXI_LINE = { gossipOptionID = 4242, name = "I need a ride", icon = 132057 }
+local TALK_LINE = { gossipOptionID = 7, name = "Hello", icon = 132053 }
+
+test("auto-flight picks the ride line when the flight master talks", function()
+    local ns = AutoFlyScene(true)
+    world.gossip = { options = { TALK_LINE, TAXI_LINE } }
+    world.picked = {}
+    Fire(ns, "GOSSIP_SHOW")
+    eq(world.picked[1], 4242, "the taxi line, by its option ID")
+end)
+
+test("auto-flight leaves the talk window alone when off, with Shift, or with a quest to hand in", function()
+    local ns = AutoFlyScene()
+    world.gossip = { options = { TAXI_LINE } }
+    world.picked = {}
+    Fire(ns, "GOSSIP_SHOW")
+    eq(#world.picked, 0, "off: nothing picked")
+
+    DropOffDB.autoFly = true
+    world.shift = true
+    Fire(ns, "GOSSIP_SHOW")
+    eq(#world.picked, 0, "Shift held: nothing picked")
+    world.shift = false
+
+    world.gossip.active = { { questID = 1, title = "Done" } }
+    Fire(ns, "GOSSIP_SHOW")
+    eq(#world.picked, 0, "a quest to hand in here comes first")
+
+    world.gossip = { options = { TALK_LINE } }
+    Fire(ns, "GOSSIP_SHOW")
+    eq(#world.picked, 0, "no ride line: nothing picked")
+end)
+
+test("auto-flight uses the old talk calls when the modern ones are missing", function()
+    local ns = AutoFlyScene(true)
+    C_GossipInfo = nil
+    local chosen
+    GetGossipOptions = function() return "Hello", "gossip", "I need a ride", "taxi" end
+    SelectGossipOption = function(index) chosen = index end
+    Fire(ns, "GOSSIP_SHOW")
+    GetGossipOptions, SelectGossipOption = nil, nil
+    eq(chosen, 2, "the second line, the taxi one")
 end)
 
 test("/dropoff fly toggles auto-flight", function()

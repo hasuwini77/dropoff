@@ -568,13 +568,21 @@ end
 -- client's language, as Route.NodeName gives it, the way RecordTaxiMap does.
 -- Nil when this is not that flight master, or the destination is not
 -- reachable from here (an unknown flight is never planned either).
-function Route.AutoFlySlot(legs)
+-- The flight the trip takes next: its first leg, or the one after the walk
+-- to that flight master. Nil when the next thing is not a flight.
+function Route.AutoFlyLeg(legs)
     local leg = legs and legs[1]
     if leg and leg.kind == "walk" and leg.to.node and legs[2] and legs[2].kind == "fly"
         and legs[2].from.node == leg.to.node then
         leg = legs[2]
     end
     if not leg or leg.kind ~= "fly" or not leg.from.node or not leg.to.node then return nil end
+    return leg
+end
+
+function Route.AutoFlySlot(legs)
+    local leg = Route.AutoFlyLeg(legs)
+    if not leg then return nil end
     -- By node ID first, as RecordTaxiMap reads the map: no name to compare.
     if type(C_TaxiMap) == "table" and type(C_TaxiMap.GetAllTaxiNodes) == "function" then
         local mapId = type(GetTaxiMapID) == "function" and Try(GetTaxiMapID)

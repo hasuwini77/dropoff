@@ -235,15 +235,66 @@ end
 -- Opt-in auto-flight. Runs only from TAXIMAP_OPENED, which the player starts by
 -- right-clicking a flight master: it picks the suggested destination on the
 -- open map and nothing else. It never targets an NPC and never moves the player.
-function ns.AutoFly()
-    if not DropOffDB.autoFly or not ns.IsOpen() then return end
-    if ns.Try(IsShiftKeyDown) then return end
+-- The legs of the trip auto-flight may act on, or nil when it must not act.
+local function AutoFlyLegs()
+    if not DropOffDB.autoFly or not ns.IsOpen() then return nil end
+    if ns.Try(IsShiftKeyDown) then return nil end
     local plan = ns.state.plan
-    if not plan or plan.carried then return end
-    local legs
+    if not plan or plan.carried then return nil end
     for _, quest in ipairs(plan.ready) do
-        if quest.id == plan.current then legs = quest.target and quest.target.legs end
+        if quest.id == plan.current then return quest.target and quest.target.legs end
     end
+    return nil
+end
+
+-- The taxi line of a flight master's talk window ("I need a ride"): its
+-- option ID (modern call) or its index (old call). Nil when there is none.
+local TAXI_ICON = 132057   -- Interface\GossipFrame\TaxiGossipIcon
+local function TaxiOption()
+    local G = rawget(_G, "C_GossipInfo")
+    if type(G) == "table" and type(G.GetOptions) == "function" then
+        local options = ns.Try(G.GetOptions)
+        if type(options) == "table" then
+            for _, option in ipairs(options) do
+                if type(option) == "table" and (option.icon == TAXI_ICON or option.type == "taxi")
+                    and option.gossipOptionID then
+                    return option.gossipOptionID, nil
+                end
+            end
+        end
+    end
+    local old = rawget(_G, "GetGossipOptions")
+    if type(old) == "function" then
+        local list = { ns.Try(old) }
+        for index = 1, #list / 2 do
+            if list[index * 2] == "taxi" then return nil, index end
+        end
+    end
+    return nil
+end
+
+-- Opt-in auto-flight, step 1: the player right-clicked a flight master and
+-- the talk window opened. When the trip flies next, pick "I need a ride" so
+-- the flight map opens. Not when the master also has a quest to hand in.
+function ns.AutoFlyGossip()
+    local legs = AutoFlyLegs()
+    if not ns.Route.AutoFlyLeg(legs) then return end
+    local G = rawget(_G, "C_GossipInfo")
+    if type(G) == "table" and type(G.GetActiveQuests) == "function" then
+        local active = ns.Try(G.GetActiveQuests)
+        if type(active) == "table" and #active > 0 then return end
+    end
+    local id, index = TaxiOption()
+    if id and type(G) == "table" and type(G.SelectOption) == "function" then
+        ns.Try(G.SelectOption, id)
+    elseif index and type(rawget(_G, "SelectGossipOption")) == "function" then
+        ns.Try(SelectGossipOption, index)
+    end
+end
+
+function ns.AutoFly()
+    local legs = AutoFlyLegs()
+    if not legs then return end
     local slot, name = ns.Route.AutoFlySlot(legs)
     if not slot then return end
     ns.Try(TakeTaxiNode, slot)
@@ -424,6 +475,7 @@ local EVENTS = {
     "QUEST_TURNED_IN",
     "ZONE_CHANGED_NEW_AREA",
     "TAXIMAP_OPENED",
+    "GOSSIP_SHOW",
 }
 for _, event in ipairs(EVENTS) do
     -- RegisterEvent throws for events a client does not know.
@@ -458,6 +510,12 @@ frame:SetScript("OnEvent", function(_, event, arg1)
                 if DropOffCharDB.open and not ns.IsOpen() then ns.UI.Show() end
             end)
         end
+        return
+    end
+
+    if event == "GOSSIP_SHOW" then
+        local ok, err = pcall(ns.AutoFlyGossip)
+        if not ok then ns.Log("auto-flight talk error: %s", tostring(err)) end
         return
     end
 
