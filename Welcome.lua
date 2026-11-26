@@ -7,15 +7,17 @@ local L = ns.L
 local Welcome = {}
 ns.Welcome = Welcome
 
-local WIDTH, HEIGHT, PAD = 380, 300, 14
+local WIDTH, HEIGHT, PAD = 420, 340, 16
 local INNER = WIDTH - 2 * PAD
 local STEPS = 4
 local DELAY = 3                  -- seconds after login: let the other addons settle
-local ROW_HEIGHT, BODY_TOP = 32, 84
+local LOGO = 44
+local ROW_HEIGHT, BODY_TOP = 36, 104
 local BUTTON_W, BUTTON_H = 96, 22
 local BUTTON_PAD = 32           -- room left and right of a button's label
 local READY = "Interface\\RaidFrame\\ReadyCheck-Ready"
 local NOT_READY = "Interface\\RaidFrame\\ReadyCheck-NotReady"
+local LOGO_FILE = "Interface\\AddOns\\DropOff\\Media\\logo"
 
 local GREEN = { 0.35, 0.9, 0.45 }
 local RED = { 0.95, 0.4, 0.35 }
@@ -128,10 +130,10 @@ local function NewRow(index)
     row.mark = frame:CreateTexture(nil, "ARTWORK")
     row.mark:SetSize(16, 16)
     row.mark:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, y)
-    row.name = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    row.name = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     row.name:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD + 24, y)
     row.name:SetJustifyH("LEFT")
-    row.text = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    row.text = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
     row.text:SetPoint("TOPLEFT", row.name, "BOTTOMLEFT", 0, -2)
     row.text:SetJustifyH("LEFT")
     return row
@@ -141,7 +143,7 @@ local function NewCheck(label, y, onClick)
     local check = CreateFrame("CheckButton", nil, frame, "UICheckButtonTemplate")
     check:SetSize(24, 24)
     check:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD - 4, y)
-    check.label = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    check.label = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     check.label:SetPoint("LEFT", check, "RIGHT", 4, 0)
     check.label:SetWidth(INNER - 32)
     check.label:SetJustifyH("LEFT")
@@ -172,18 +174,30 @@ local function Build()
     end
     frame:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
 
-    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
-    frame.title:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -PAD)
+    frame.logo = frame:CreateTexture(nil, "ARTWORK")
+    frame.logo:SetSize(LOGO, LOGO)
+    frame.logo:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -PAD)
+    frame.logo:SetTexture(LOGO_FILE)
+
+    frame.title = frame:CreateFontString(nil, "OVERLAY", "GameFontNormalLarge")
+    frame.title:SetPoint("TOPLEFT", frame.logo, "TOPRIGHT", 12, -4)
     frame.title:SetText(L.WELCOME_TITLE)
 
     frame.counter = frame:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-    frame.counter:SetPoint("TOPLEFT", frame.title, "BOTTOMLEFT", 0, -4)
+    frame.counter:SetPoint("TOPLEFT", frame.title, "BOTTOMLEFT", 0, -6)
 
-    frame.head = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
-    frame.head:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -62)
+    frame.head = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.head:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -(PAD + LOGO + 16))
     frame.head:SetJustifyH("LEFT")
 
-    frame.body = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    -- How to open DropOff, in gold above the buttons on the first page.
+    frame.launch = frame:CreateFontString(nil, "OVERLAY", "GameFontNormal")
+    frame.launch:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", PAD, PAD + BUTTON_H + 16)
+    frame.launch:SetWidth(INNER)
+    frame.launch:SetJustifyH("LEFT")
+    frame.launch:SetText(L.WELCOME_LAUNCH)
+
+    frame.body = frame:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     frame.body:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, -BODY_TOP)
     frame.body:SetWidth(INNER)
     frame.body:SetJustifyH("LEFT")
@@ -191,13 +205,13 @@ local function Build()
 
     for index = 1, #MAPS + 2 do rows[index] = NewRow(index) end
 
-    frame.minimap = NewCheck(L.WELCOME_OPT_MINIMAP, -(BODY_TOP + 44), function(checked)
+    frame.minimap = NewCheck(L.WELCOME_OPT_MINIMAP, -(BODY_TOP + 48), function(checked)
         if type(DropOffDB) ~= "table" then return end
         DropOffDB.minimap = type(DropOffDB.minimap) == "table" and DropOffDB.minimap or {}
         DropOffDB.minimap.hide = (not checked) and true or nil
         if ns.MinimapButton then ns.MinimapButton.Refresh() end
     end)
-    frame.alert = NewCheck(L.WELCOME_OPT_ALERT, -(BODY_TOP + 76), function(checked)
+    frame.alert = NewCheck(L.WELCOME_OPT_ALERT, -(BODY_TOP + 88), function(checked)
         if type(DropOffDB) == "table" then DropOffDB.alert = checked end
     end)
 
@@ -262,6 +276,8 @@ local function Paint()
     else
         frame.body:SetText(L["WELCOME_" .. step .. "_BODY"])
     end
+
+    frame.launch:SetShown(step == 1)
 
     local settings = step == 3
     frame.minimap:SetShown(settings)

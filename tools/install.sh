@@ -17,6 +17,7 @@ rsync -a --delete \
     --include '/*.lua' --include '/*.toc' --include '/LICENSE' \
     --include '/LICENSES/' --include '/LICENSES/*.txt' \
     --include '/Router/' --include '/Router/*.lua' \
+    --include '/Media/' --include '/Media/*.tga' \
     --exclude '*' ./ "$ADDONS/DropOff/"
 echo "Installed to $ADDONS/DropOff"
 
