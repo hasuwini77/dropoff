@@ -7,12 +7,13 @@ local L = ns.L
 local Welcome = {}
 ns.Welcome = Welcome
 
-local WIDTH, HEIGHT, PAD = 360, 300, 14
+local WIDTH, HEIGHT, PAD = 380, 300, 14
 local INNER = WIDTH - 2 * PAD
 local STEPS = 4
 local DELAY = 3                  -- seconds after login: let the other addons settle
 local ROW_HEIGHT, BODY_TOP = 32, 84
 local BUTTON_W, BUTTON_H = 96, 22
+local BUTTON_PAD = 32           -- room left and right of a button's label
 local READY = "Interface\\RaidFrame\\ReadyCheck-Ready"
 local NOT_READY = "Interface\\RaidFrame\\ReadyCheck-NotReady"
 
@@ -113,6 +114,14 @@ local function Button(label)
     return button
 end
 
+-- A button grows to fit its label, so "Open DropOff" keeps its margins.
+local function FitButton(button)
+    local width = BUTTON_W
+    local measured = button.GetTextWidth and Try(button.GetTextWidth, button)
+    if type(measured) == "number" then width = math.max(BUTTON_W, math.ceil(measured) + BUTTON_PAD) end
+    button:SetWidth(width)
+end
+
 local function NewRow(index)
     local row = {}
     local y = -(BODY_TOP + (index - 1) * ROW_HEIGHT)
@@ -200,13 +209,14 @@ local function Build()
     frame.back:SetPoint("BOTTOMLEFT", frame, "BOTTOMLEFT", PAD, PAD)
     frame.back:SetScript("OnClick", function() Welcome.Back() end)
 
-    frame.skip = Button(L.WELCOME_SKIP)
-    frame.skip:SetPoint("BOTTOM", frame, "BOTTOM", 0, PAD)
-    frame.skip:SetScript("OnClick", function() Welcome.Skip() end)
-
     frame.next = Button(L.WELCOME_NEXT)
     frame.next:SetPoint("BOTTOMRIGHT", frame, "BOTTOMRIGHT", -PAD, PAD)
     frame.next:SetScript("OnClick", function() Welcome.Next() end)
+
+    frame.skip = Button(L.WELCOME_SKIP)
+    frame.skip:SetPoint("BOTTOMRIGHT", frame.next, "BOTTOMLEFT", -8, 0)
+    frame.skip:SetScript("OnClick", function() Welcome.Skip() end)
+
 
     -- Hide before wiring the scripts: frames are born shown.
     frame:Hide()
@@ -267,6 +277,8 @@ local function Paint()
     frame.back:SetShown(step > 1)
     frame.skip:SetText(last and L.WELCOME_CLOSE or L.WELCOME_SKIP)
     frame.next:SetText(last and L.WELCOME_OPEN or L.WELCOME_NEXT)
+    FitButton(frame.skip)
+    FitButton(frame.next)
 end
 
 ---------------------------------------------------------------------------

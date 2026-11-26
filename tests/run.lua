@@ -196,6 +196,8 @@ local function Widget()
     function widget:ParentShown() if self.scripts.OnShow then self.scripts.OnShow(self) end end
     function widget:SetShown(value) if value then self:Show() else self:Hide() end end
     function widget:SetText(text) self.text = text end
+    function widget:SetWidth(width) self.width = width end
+    function widget:GetTextWidth() return #(self.text or "") * 7 end
     function widget:GetText() return self.text end
     function widget:SetHeight(height) self.height = height end
     function widget:EnableMouseWheel(on) self.wheel = on and true or false end
@@ -3768,10 +3770,12 @@ test("welcome: Next, Back and Skip", function()
     eq(ns.Welcome.State().step, 4, "step 4")
     eq(w.counter:GetText(), "Step 4 of 4", "the counter follows")
     eq(w.next:GetText(), "Open DropOff", "the last step opens DropOff")
+    check(w.next.width >= #"Open DropOff" * 7 + 32, "the button grows to keep a margin round its label")
     eq(w.skip:GetText(), "Close", "and closes")
     w.back:Click()
     eq(ns.Welcome.State().step, 3, "Back: step 3")
     eq(w.next:GetText(), "Next", "Next again")
+    eq(w.next.width, 96, "and shrinks back")
     eq(w.skip:GetText(), "Skip", "Skip again")
     check(not DropOffDB.welcomed, "still not done")
     w.skip:Click()
