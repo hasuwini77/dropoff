@@ -44,7 +44,7 @@ The walk follows the terrain. While the path is being worked out the window says
 ## Two more lists
 
 - **Quests in progress** that hold items, so you see what takes space before it is done.
-- **Quest items with no quest** in your log: leftovers you can sell or destroy.
+- **Quest items with no quest** in your log. DropOff says an item can go only when every quest that uses it is handed in. Rewards you keep, like a membership card, never show up.
 
 These two have no directions yet.
 
@@ -112,7 +112,7 @@ La marche suit le terrain. Tant que le chemin se calcule, la fenêtre affiche «
 ## Deux autres listes
 
 - **Les quêtes en cours** qui occupent des emplacements, pour voir ce qui prend de la place avant de les finir.
-- **Les objets de quête sans quête** dans ton journal : des restes à vendre ou à détruire.
+- **Les objets de quête sans quête** dans ton journal. DropOff ne dit qu'un objet peut partir que si toutes les quêtes qui l'utilisent sont rendues. Les récompenses à garder, comme une carte de membre, n'y apparaissent jamais.
 
 Ces deux listes n'ont pas encore de guidage.
 
