@@ -23,6 +23,7 @@ Made for WoW Forever, in English and French.
 - **Drawn on your maps**: a line on the world map, a yellow line on the minimap.
 - **An arrow**: TomTom's if you have it, the game's map pin if you don't.
 - **Stays out of the way**: a compact mode, and a long list stops above your chat and scrolls.
+- **Optional auto-flight**: off by default. Open the right flight master's map and DropOff takes the suggested flight. Hold Shift to choose yourself.
 - **A bag hint**: one chat line when your bags are nearly full and finished quests hold slots.
 
 ## Open it
@@ -91,6 +92,7 @@ Conçu pour WoW Forever, en français et en anglais.
 - **Tracé sur tes cartes** : une ligne sur la carte du monde, une ligne jaune sur la minicarte.
 - **Une flèche** : celle de TomTom si tu l'as, sinon le repère de carte du jeu.
 - **Discret** : un mode compact, et une longue liste s'arrête au-dessus du chat et défile.
+- **Vol automatique, en option** : désactivé par défaut. Ouvre la carte du bon maître de vol et DropOff prend le vol conseillé. Garde Maj pour choisir toi-même.
 - **Une alerte de sacs** : une ligne dans le chat quand tes sacs sont presque pleins et que des quêtes terminées occupent des emplacements.
 
 ## L'ouvrir

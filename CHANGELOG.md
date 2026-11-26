@@ -2,7 +2,8 @@
 
 ## Unreleased
 
-- A welcome window on the first login, in four short steps: what DropOff solves, what it needs (Questie, TomTom, the three map addons, each checked live), two settings (minimap button, bag alert in chat), and how to open it. Skip, Close or finishing it sets a flag and it does not come back. It waits for the end of a fight.
+- Opt-in auto-flight, off by default: right-click the flight master the trip starts at and DropOff takes the suggested flight for you. Turn it on with `/dropoff fly` or the third box on the welcome window's step 3. Hold Shift to choose yourself. It acts only on the flight map you opened: it never targets an NPC or moves you, and an unknown or unreachable flight is left alone. Not yet checked in game.
+- A welcome window on the first login, in four short steps: what DropOff solves, what it needs (Questie, TomTom, the three map addons, each checked live), three settings (minimap button, bag alert in chat, auto-flight), and how to open it. Skip, Close or finishing it sets a flag and it does not come back. It waits for the end of a fight.
 - `/dropoff welcome` opens it again at step 1.
 - The welcome window shows the DropOff logo, uses larger text, and says on its first page how to open DropOff.
 - New file `Welcome.lua`: the game must be fully restarted once, a /reload is not enough.
