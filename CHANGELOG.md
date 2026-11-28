@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.9.1
+
+- Click "+N more" under a section to see all of it, and "Show less" to fold it back.
+- Opt-in auto-flight, off by default: right-click the flight master the trip starts at and DropOff picks "I need a ride" and the suggested flight for you. It skips the talk step when that master also has a quest to hand in. Turn it on with `/dropoff fly` or the third box on the welcome window's step 3. Hold Shift to choose yourself. It acts only on the talk window and flight map you opened: it never targets an NPC or moves you, and an unknown or unreachable flight is left alone. Checked in game.
+- The welcome window's settings step has a third box for auto-flight.
+
 ## 0.9.0
 
 - A welcome window on the first login, in four short steps: what DropOff solves, what it needs (Questie, TomTom, the three map addons, each checked live), two settings (minimap button, bag alert in chat), and how to open it. Skip, Close or finishing it sets a flag and it does not come back. It waits for the end of a fight.

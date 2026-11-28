@@ -372,6 +372,19 @@ local function InstallGlobals()
         GetAllTaxiNodes = function() return world.taxiNodes or {} end,
         GetTaxiNodesForMap = function() return world.localNames or {} end,
     }
+    -- The old flight map: world.slots = { { name, type }, ... }.
+    world.taken = {}
+    NumTaxiNodes = function() return #(world.slots or {}) end
+    TaxiNodeName = function(slot) return world.slots[slot][1] end
+    TaxiNodeGetType = function(slot) return world.slots[slot][2] end
+    TakeTaxiNode = function(slot) world.taken[#world.taken + 1] = slot end
+    IsShiftKeyDown = function() return world.shift or false end
+    world.gossip, world.picked = nil, {}
+    C_GossipInfo = {
+        GetOptions = function() return world.gossip and world.gossip.options or {} end,
+        GetActiveQuests = function() return world.gossip and world.gossip.active or {} end,
+        SelectOption = function(id) world.picked[#world.picked + 1] = id end,
+    }
     issecretvalue = function(value) return value == SECRET end
     NUM_BAG_SLOTS = 4
     UIParent = Widget()
@@ -998,6 +1011,35 @@ test("a quest item is only called droppable when the database proves it", functi
     eq(subs["Odd Trinket"], ns.L.ORPHAN_LEFTOVER, "says to check first")
 end)
 
+test("+N more opens the rest of a section, and Show less closes it", function()
+    Scene()
+    for id = 620, 626 do
+        world.items[id] = { name = "Odd Trinket " .. id, class = 12 }
+        Put(id, 1)
+    end
+    local ns = Load()
+    ns.Toggle()
+    local function orphanRows()
+        local count = 0
+        for _, line in ipairs(ns.UI.Lines(ns.state.plan)) do
+            if line.kind == "row" and line.title and line.title:find("Odd Trinket", 1, true) then count = count + 1 end
+        end
+        return count
+    end
+    eq(orphanRows(), 4, "four shown at first")
+    local toggle
+    for _, t in ipairs(ns.UI.Toggles()) do if t.section == "orphans" then toggle = t end end
+    check(toggle, "a clickable line under them")
+    eq(toggle.label:GetText(), ns.L.MORE:format(3), "it says how many are hidden")
+    toggle:Click()
+    eq(orphanRows(), 7, "all seven after the click")
+    toggle = nil
+    for _, t in ipairs(ns.UI.Toggles()) do if t.section == "orphans" then toggle = t end end
+    eq(toggle.label:GetText(), ns.L.LESS, "the line now closes them")
+    toggle:Click()
+    eq(orphanRows(), 4, "back to four")
+end)
+
 test("an item shared by two finished quests frees its slots once", function()
     Scene()
     world.db.quests[3].objectives = { nil, nil, { { 100 } } }
@@ -1324,7 +1366,7 @@ test("the small window shows only the next hand-in, and keeps guiding", function
     check(not DropOffFrame.summary:IsShown(), "no summary line")
     check(DropOffFrame.height < full / 2, "much smaller: " .. DropOffFrame.height .. " against " .. full)
     eq(#LiveWaypoints(), 1, "the arrow is still there")
-    check(HasLabel(ns, ns.L.MORE:format(3)), "and it says how many more are waiting")
+    check(HasLabel(ns, ns.L.OTHERS:format(3)), "and it says how many more are waiting")
 
     Advance(10)
     eq(#ns.UI.Rows(), 1, "still one row after the refreshes")
@@ -1845,6 +1887,153 @@ test("the flight map tells which flight masters are known", function()
     Fire(ns, "TAXIMAP_OPENED")
     check(DropOffCharDB.flights[13] and DropOffCharDB.flights[11] and DropOffCharDB.flights[17],
         "a partial list adds, it does not remove")
+end)
+
+-- Standing at Hammerfall with the trip's first leg a flight to Tarren Mill.
+local function AutoFlyScene(on, french)
+    TravelScene()
+    if french then
+        world.localNames = { { nodeID = 17, name = "Fossé-du-Marteau, Arathi" }, { nodeID = 13, name = "Moulin-de-Tarren, Hautebrande" } }
+    end
+    local ns = Load()
+    if on then DropOffDB.autoFly = true end
+    ns.Toggle()
+    world.taxiNodes = { { nodeID = 17, state = 0 }, { nodeID = 13, state = 1 } }
+    world.slots = {
+        { "Undercity, Tirisfal", "REACHABLE" },
+        { "Hammerfall, Arathi", "CURRENT" },
+        { "Tarren Mill, Hillsbrad", "REACHABLE" },
+    }
+    Fire(ns, "TAXIMAP_OPENED")
+    Advance(1)
+    eq(ns.state.plan.ready[1].target.legs[1].kind, "fly", "the trip starts with a flight")
+    world.chat, world.taken = {}, {}
+    return ns
+end
+
+test("auto-flight is off by default and takes nothing", function()
+    local ns = AutoFlyScene()
+    eq(DropOffDB.autoFly, false, "off by default")
+    Fire(ns, "TAXIMAP_OPENED")
+    eq(#world.taken, 0, "nothing taken")
+end)
+
+test("auto-flight takes the suggested flight and says so", function()
+    local ns = AutoFlyScene(true)
+    Fire(ns, "TAXIMAP_OPENED")
+    eq(#world.taken, 1, "one flight taken")
+    eq(world.taken[1], 3, "the Tarren Mill slot")
+    check(ChatHas("DropOff: flying to Tarren Mill (hold Shift to choose yourself)"), "the chat line")
+end)
+
+test("auto-flight finds the slot by node ID when the map gives one", function()
+    local ns = AutoFlyScene(true)
+    world.taxiNodes = { { nodeID = 17, state = 0, slotIndex = 5 }, { nodeID = 13, state = 1, slotIndex = 9 } }
+    world.slots = {}
+    Fire(ns, "TAXIMAP_OPENED")
+    eq(world.taken[1], 9, "the slot the map gives for Tarren Mill")
+end)
+
+test("auto-flight matches the node by the client's language", function()
+    local ns = AutoFlyScene(true, true)
+    world.slots = { { "Fossé-du-Marteau, Arathi", "CURRENT" }, { "Moulin-de-Tarren, Hautebrande", "REACHABLE" } }
+    Fire(ns, "TAXIMAP_OPENED")
+    eq(world.taken[1], 2, "the French slot")
+end)
+
+test("auto-flight does nothing with Shift held", function()
+    local ns = AutoFlyScene(true)
+    world.shift = true
+    Fire(ns, "TAXIMAP_OPENED")
+    eq(#world.taken, 0, "nothing taken")
+    eq(#world.chat, 0, "and nothing said")
+end)
+
+test("auto-flight does nothing when the destination is not reachable", function()
+    local ns = AutoFlyScene(true)
+    world.slots[3][2] = "UNREACHABLE"
+    Fire(ns, "TAXIMAP_OPENED")
+    eq(#world.taken, 0, "nothing taken")
+end)
+
+test("auto-flight does nothing when the window is closed", function()
+    local ns = AutoFlyScene(true)
+    ns.Toggle()
+    check(not ns.IsOpen(), "closed")
+    Fire(ns, "TAXIMAP_OPENED")
+    eq(#world.taken, 0, "nothing taken")
+end)
+
+test("auto-flight does nothing when the next leg is not a flight", function()
+    TravelScene(HAMMERFALL[1] - 200, HAMMERFALL[2])
+    local ns = Load()
+    DropOffDB.autoFly = true
+    ns.Toggle()
+    eq(ns.state.plan.ready[1].target.legs[1].kind, "walk", "on foot first")
+    world.taxiNodes = { { nodeID = 17, state = 1 }, { nodeID = 13, state = 1 } }
+    world.slots = { { "Hammerfall, Arathi", "REACHABLE" }, { "Tarren Mill, Hillsbrad", "REACHABLE" } }
+    world.chat, world.taken = {}, {}
+    Fire(ns, "TAXIMAP_OPENED")
+    eq(#world.taken, 0, "nothing taken: this is not the flight master the trip starts at")
+end)
+
+local TAXI_LINE = { gossipOptionID = 4242, name = "I need a ride", icon = 132057 }
+local TALK_LINE = { gossipOptionID = 7, name = "Hello", icon = 132053 }
+
+test("auto-flight picks the ride line when the flight master talks", function()
+    local ns = AutoFlyScene(true)
+    world.gossip = { options = { TALK_LINE, TAXI_LINE } }
+    world.picked = {}
+    Fire(ns, "GOSSIP_SHOW")
+    eq(world.picked[1], 4242, "the taxi line, by its option ID")
+end)
+
+test("auto-flight leaves the talk window alone when off, with Shift, or with a quest to hand in", function()
+    local ns = AutoFlyScene()
+    world.gossip = { options = { TAXI_LINE } }
+    world.picked = {}
+    Fire(ns, "GOSSIP_SHOW")
+    eq(#world.picked, 0, "off: nothing picked")
+
+    DropOffDB.autoFly = true
+    world.shift = true
+    Fire(ns, "GOSSIP_SHOW")
+    eq(#world.picked, 0, "Shift held: nothing picked")
+    world.shift = false
+
+    world.gossip.active = { { questID = 1, title = "Done" } }
+    Fire(ns, "GOSSIP_SHOW")
+    eq(#world.picked, 0, "a quest to hand in here comes first")
+
+    world.gossip = { options = { TALK_LINE } }
+    Fire(ns, "GOSSIP_SHOW")
+    eq(#world.picked, 0, "no ride line: nothing picked")
+end)
+
+test("auto-flight uses the old talk calls when the modern ones are missing", function()
+    local ns = AutoFlyScene(true)
+    C_GossipInfo = nil
+    local chosen
+    GetGossipOptions = function() return "Hello", "gossip", "I need a ride", "taxi" end
+    SelectGossipOption = function(index) chosen = index end
+    Fire(ns, "GOSSIP_SHOW")
+    GetGossipOptions, SelectGossipOption = nil, nil
+    eq(chosen, 2, "the second line, the taxi one")
+end)
+
+test("/dropoff fly toggles auto-flight", function()
+    Scene()
+    local ns = Load()
+    eq(DropOffDB.autoFly, false, "off")
+    SlashCmdList.DROPOFF("fly")
+    eq(DropOffDB.autoFly, true, "on")
+    check(ChatHas("auto-flight on"), "says on")
+    SlashCmdList.DROPOFF("fly")
+    eq(DropOffDB.autoFly, false, "off again")
+    check(ChatHas("auto-flight off"), "says off")
+    world.chat = {}
+    SlashCmdList.DROPOFF("nonsense")
+    check(ChatHas("fly"), "the help line lists it")
 end)
 
 test("an Alliance character takes boats, never a zeppelin", function()
@@ -3912,6 +4101,20 @@ test("welcome: the two check boxes change the settings at once", function()
     eq(DropOffDB.alert, false, "alert off")
     w.alert:Click()
     eq(DropOffDB.alert, true, "alert on")
+end)
+
+test("welcome: the third box sets auto-flight", function()
+    local ns = Login()
+    ns.Welcome.Show(3)
+    local w = DropOffWelcome
+    eq(w.fly:GetChecked(), false, "starts empty")
+    w.fly:Click()
+    eq(DropOffDB.autoFly, true, "ticked: on")
+    w.fly:Click()
+    eq(DropOffDB.autoFly, false, "unticked: off")
+    DropOffDB.autoFly = true
+    ns.Welcome.Show(3)
+    eq(w.fly:GetChecked(), true, "shows the saved setting")
 end)
 
 test("welcome: the boxes show the saved settings", function()

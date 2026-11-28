@@ -43,7 +43,9 @@ local THUMB_LIT = { 1, 0.82, 0, 0.75 }
 local THUMB_FADE = 1.2                   -- seconds the thumb stays lit after a tick
 
 local frame
-local rows, labels = {}, {}
+local rows, labels, toggles = {}, {}, {}
+-- Sections the player opened with "+N more": shown whole.
+local expanded = {}
 -- Lines scrolled past at the top, and what they were counted for.
 local offset, seenCurrent, seenCompact = 0, nil, nil
 
@@ -174,6 +176,23 @@ local function NewLabel()
     label:SetWordWrap(false)
     label:SetWidth(INNER)
     return label
+end
+
+-- A "+N more" / "Show less" line: a label the player can click.
+local function NewToggle()
+    local button = CreateFrame("Button", nil, frame)
+    button:SetSize(INNER, NOTE_HEIGHT)
+    button.label = button:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+    button.label:SetPoint("LEFT", button, "LEFT", 0, 0)
+    button.label:SetJustifyH("LEFT")
+    button:SetScript("OnClick", function(self)
+        if not self.section then return end
+        expanded[self.section] = not expanded[self.section] or nil
+        if ns.state.plan then UI.Render(ns.state.plan) end
+    end)
+    button:SetScript("OnEnter", function(self) Colour(self.label, GOLD) end)
+    button:SetScript("OnLeave", function(self) Colour(self.label, DISABLED) end)
+    return button
 end
 
 local function Build()
@@ -329,6 +348,16 @@ function UI.Lines(plan, compact)
     local function note(text, colour)
         lines[#lines + 1] = { kind = "label", text = text, height = NOTE_HEIGHT, colour = colour }
     end
+    -- How many rows a section shows, and the line under it that opens or
+    -- closes the rest.
+    local function limitFor(section, limit) return expanded[section] and math.huge or limit end
+    local function more(section, total, limit)
+        if expanded[section] and total > limit then
+            lines[#lines + 1] = { kind = "toggle", section = section, text = L.LESS, height = NOTE_HEIGHT }
+        elseif total > limit then
+            lines[#lines + 1] = { kind = "toggle", section = section, text = L.MORE:format(total - limit), height = NOTE_HEIGHT }
+        end
+    end
 
     -- The trip to the current quest, one line per leg. A plain walk is one
     -- line: how far. Under them, a line of its own says when a walk is
@@ -406,7 +435,7 @@ function UI.Lines(plan, compact)
             end
         end
         if not plan.hasDB then note(L.NEED_QUESTIE) end
-        if #plan.ready > 1 then note(L.MORE:format(#plan.ready - 1)) end
+        if #plan.ready > 1 then note(L.OTHERS:format(#plan.ready - 1)) end
         return lines
     end
 
@@ -418,22 +447,22 @@ function UI.Lines(plan, compact)
         bucket[#bucket + 1] = quest
     end
 
-    local function readySection(list, title, limit)
+    local function readySection(list, title, section)
         if #list == 0 then return end
         header(title)
-        for index = 1, math.min(#list, limit) do
+        for index = 1, math.min(#list, limitFor(section, LIMIT[section])) do
             local quest = list[index]
             readyRow(quest)
             if plan.current == quest.id then route(quest) end
         end
-        if #list > limit then note(L.MORE:format(#list - limit)) end
+        more(section, #list, LIMIT[section])
     end
-    readySection(withItems, L.SECTION_READY, LIMIT.ready)
-    readySection(withoutItems, L.SECTION_READY_NOITEMS, LIMIT.readyNoItems)
+    readySection(withItems, L.SECTION_READY, "ready")
+    readySection(withoutItems, L.SECTION_READY_NOITEMS, "readyNoItems")
 
     if #plan.progress > 0 then
         header(L.SECTION_PROGRESS)
-        for index = 1, math.min(#plan.progress, LIMIT.progress) do
+        for index = 1, math.min(#plan.progress, limitFor("progress", LIMIT.progress)) do
             local quest = plan.progress[index]
             lines[#lines + 1] = {
                 kind = "row", height = ROW_HEIGHT, dim = true,
@@ -443,12 +472,12 @@ function UI.Lines(plan, compact)
                 items = quest.items,
             }
         end
-        if #plan.progress > LIMIT.progress then note(L.MORE:format(#plan.progress - LIMIT.progress)) end
+        more("progress", #plan.progress, LIMIT.progress)
     end
 
     if #plan.orphans > 0 then
         header(L.SECTION_ORPHANS)
-        for index = 1, math.min(#plan.orphans, LIMIT.orphans) do
+        for index = 1, math.min(#plan.orphans, limitFor("orphans", LIMIT.orphans)) do
             local item = plan.orphans[index]
             lines[#lines + 1] = {
                 kind = "row", height = ROW_HEIGHT, dim = true,
@@ -457,7 +486,7 @@ function UI.Lines(plan, compact)
                 right = "", badge = "x" .. item.count, badgeColour = GREY,
             }
         end
-        if #plan.orphans > LIMIT.orphans then note(L.MORE:format(#plan.orphans - LIMIT.orphans)) end
+        more("orphans", #plan.orphans, LIMIT.orphans)
     end
 
     -- Footer: how the way is shown, or what is missing to show it.
@@ -592,7 +621,7 @@ function UI.Render(plan)
     offset = math.max(0, math.min(offset, maxOffset))
     local last = overflow and Fit(lines, offset, room) or #lines
 
-    local usedRows, usedLabels = 0, 0
+    local usedRows, usedLabels, usedToggles = 0, 0, 0
     local y = -top
 
     for index = offset + 1, last do
@@ -619,6 +648,19 @@ function UI.Render(plan)
             row.marker:SetShown(line.current and true or false)
             row.map:SetShown(line.canPin and true or false)
             row:Show()
+        elseif line.kind == "toggle" then
+            usedToggles = usedToggles + 1
+            local toggle = toggles[usedToggles]
+            if not toggle then
+                toggle = NewToggle()
+                toggles[usedToggles] = toggle
+            end
+            toggle.section = line.section
+            toggle:ClearAllPoints()
+            toggle:SetPoint("TOPLEFT", frame, "TOPLEFT", PAD, y)
+            toggle.label:SetText(line.text)
+            Colour(toggle.label, DISABLED)
+            toggle:Show()
         else
             usedLabels = usedLabels + 1
             local label = labels[usedLabels]
@@ -637,6 +679,7 @@ function UI.Render(plan)
 
     for index = usedRows + 1, #rows do rows[index]:Hide() end
     for index = usedLabels + 1, #labels do labels[index]:Hide() end
+    for index = usedToggles + 1, #toggles do toggles[index]:Hide() end
 
     if overflow then
         local below = #lines - last
@@ -677,6 +720,15 @@ end
 ---------------------------------------------------------------------------
 
 -- For the tests: the row widgets currently drawn, top to bottom.
+-- The "+N more" / "Show less" lines in sight, for the tests.
+function UI.Toggles()
+    local drawn = {}
+    for _, toggle in ipairs(toggles) do
+        if toggle:IsShown() then drawn[#drawn + 1] = toggle end
+    end
+    return drawn
+end
+
 function UI.Rows()
     local drawn = {}
     for _, row in ipairs(rows) do
