@@ -183,6 +183,16 @@ function Data.ScanBags()
                     items[itemID] = entry
                 end
                 entry.slots = entry.slots + 1
+                -- The game knows when an item of any class starts a quest
+                -- (a Tainted Globe of Water is not a "quest item").
+                if not entry.startsQuest and C.GetContainerItemQuestInfo then
+                    local quest = Try(C.GetContainerItemQuestInfo, bag, slot)
+                    local questID = type(quest) == "table" and quest.questID or nil
+                    if questID and not Secret(questID) and type(questID) == "number" and questID > 0
+                        and not quest.isActive then
+                        entry.startsQuest = questID
+                    end
+                end
                 local stack = info.stackCount
                 entry.count = entry.count + (not Secret(stack) and tonumber(stack) or 1)
             elseif not info then
@@ -428,11 +438,13 @@ function Data.DebugDump()
     local bags = Data.ScanBags()
     for itemID, item in pairs(bags) do
         local name, _, classID = Data.ItemInfo(itemID)
-        if classID == QUEST_ITEM_CLASS or plan.tied[itemID] then
+        local startsQuest = Data.ItemStartsQuest(itemID)
+        if classID == QUEST_ITEM_CLASS or plan.tied[itemID] or startsQuest or item.startsQuest then
             dump.bagItems[#dump.bagItems + 1] = {
                 id = itemID, name = name, classID = classID, slots = item.slots, count = item.count,
                 tied = plan.tied[itemID] and true or false,
-                startsQuest = Data.ItemStartsQuest(itemID),
+                startsQuest = startsQuest,
+                gameStartsQuest = item.startsQuest,
             }
         end
     end

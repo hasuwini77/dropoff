@@ -439,6 +439,12 @@ local function InstallGlobals()
             local item = world.items[entry.id] or {}
             return { itemID = entry.id, stackCount = entry.count or 1, iconFileID = item.icon or entry.id }
         end,
+        GetContainerItemQuestInfo = function(bag, slot)
+            local entry = world.bags[bag] and world.bags[bag].slots[slot]
+            if not entry then return nil end
+            local item = world.items[entry.id] or {}
+            return { isQuestItem = item.class == 12, questID = item.startsQuest, isActive = item.questActive or false }
+        end,
         GetContainerNumFreeSlots = function(bag)
             local data = world.bags[bag]
             if not data then return 0, 0 end
@@ -975,6 +981,37 @@ test("an item that starts an already completed quest is a plain leftover", funct
     Put(600, 1)
     local ns = Load()
     check(not ns.Plan.Build().orphans[1].starts, "not flagged as a quest starter")
+end)
+
+test("an item of any class that starts a quest is listed while that quest is still to take", function()
+    Scene()
+    world.items[16408] = { name = "Tainted Globe of Water", class = 0, startsQuest = 7011 }  -- game data only
+    world.items[620] = { name = "Torn Page", class = 15 }
+    world.db.items[620] = { startQuest = 88 }                                                 -- database only
+    world.items[621] = { name = "Old Letter", class = 15, startsQuest = 89 }
+    world.completed[89] = true
+    world.items[622] = { name = "Rusty Key", class = 15, startsQuest = 90, questActive = true }
+    Put(16408, 1); Put(620, 1); Put(621, 1); Put(622, 1)
+    local ns = Load()
+    local byName = {}
+    for _, item in ipairs(ns.Plan.Build().orphans) do byName[item.name] = item end
+    check(byName["Tainted Globe of Water"] and byName["Tainted Globe of Water"].starts, "game says it starts a quest")
+    check(byName["Torn Page"] and byName["Torn Page"].starts, "database says it starts a quest")
+    check(byName["Old Letter"] == nil, "its quest is done: an ordinary item again")
+    check(byName["Rusty Key"] == nil, "its quest is already taken")
+    check(byName["Linen Cloth"] == nil, "trade goods still ignored")
+end)
+
+test("a quest item whose quest is already in the log is not told to start it", function()
+    Scene()
+    local ns = Load()
+    local questID = ns.Plan.Build().all[1].id
+    world.items[630] = { name = "Strange Map", class = 12 }
+    world.db.items[630] = { startQuest = questID }
+    Put(630, 1)
+    for _, item in ipairs(ns.Plan.Build().orphans) do
+        check(item.id ~= 630 or not item.starts, "not flagged as a quest starter")
+    end
 end)
 
 test("a quest item is only called droppable when the database proves it", function()

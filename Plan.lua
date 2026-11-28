@@ -145,8 +145,23 @@ function Plan.Build()
         end
     end
 
+    local function Completed(questID)
+        local fn = C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted or rawget(_G, "IsQuestFlaggedCompleted")
+        return type(fn) == "function" and ns.Try(fn, questID) == true
+    end
+    local inLog = {}
+    for _, quest in ipairs(quests) do inLog[quest.id] = true end
+    -- The quest an item starts, while that quest is neither done nor taken.
+    -- QuestieDB first, then what the game says about the bag slot.
+    local function PendingStart(itemID, bagStarts)
+        local questID = Data.ItemStartsQuest(itemID) or bagStarts
+        if questID and not Completed(questID) and not inLog[questID] then return questID end
+        return nil
+    end
+
     -- 2. Quest-class items the database did not tie: match by objective text
-    --    ("Wolf Pelt: 5/5" contains the item name).
+    --    ("Wolf Pelt: 5/5" contains the item name). An item of any other
+    --    class joins them only when it starts a quest still to take.
     local loose = {}
     for itemID, bagItem in pairs(bags) do
         if not tied[itemID] then
@@ -167,9 +182,14 @@ function Plan.Build()
                 if not matched then
                     loose[#loose + 1] = {
                         id = itemID, name = name or ("#" .. itemID), icon = bagItem.icon or icon,
-                        slots = bagItem.slots, count = bagItem.count,
+                        slots = bagItem.slots, count = bagItem.count, bagStarts = bagItem.startsQuest,
                     }
                 end
+            elseif PendingStart(itemID, bagItem.startsQuest) then
+                loose[#loose + 1] = {
+                    id = itemID, name = name or ("#" .. itemID), icon = bagItem.icon or icon,
+                    slots = bagItem.slots, count = bagItem.count, bagStarts = bagItem.startsQuest,
+                }
             end
         end
     end
@@ -199,15 +219,10 @@ function Plan.Build()
     --    player an item can go when the database proves it: every quest that
     --    uses it is handed in. An item for a quest not taken yet, or one a
     --    quest gives as a reward (a membership card), is kept off the list.
-    local function Completed(questID)
-        local fn = C_QuestLog and C_QuestLog.IsQuestFlaggedCompleted or rawget(_G, "IsQuestFlaggedCompleted")
-        return type(fn) == "function" and ns.Try(fn, questID) == true
-    end
     local leftovers, kept = {}, {}
     for _, item in ipairs(loose) do
-        local startsQuest = Data.ItemStartsQuest(item.id)
         local quests, reward = Data.ItemQuests(item.id)
-        if startsQuest and not Completed(startsQuest) then
+        if PendingStart(item.id, item.bagStarts) then
             item.starts, item.status = true, "starts"
         elseif not quests then
             item.status = "unknown"
