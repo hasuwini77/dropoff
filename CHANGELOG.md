@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Items that start a quest are listed even when the game does not file them as quest items (Tainted Globe of Water): "Starts a quest: use it". DropOff asks QuestieDB and the game. Once the quest is in your log or done, the item is no longer listed as a starter. Not yet checked in game.
+
 ## 0.9.1
 
 - Click "+N more" under a section to see all of it, and "Show less" to fold it back.
