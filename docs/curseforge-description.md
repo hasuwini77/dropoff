@@ -24,6 +24,7 @@ Made for WoW Forever, in English and French.
 - **An arrow**: TomTom's if you have it, the game's map pin if you don't.
 - **Stays out of the way**: a compact mode, and a long list stops above your chat and scrolls.
 - **Optional auto-flight**: off by default. Right-click the right flight master and DropOff takes the suggested flight. Hold Shift to choose yourself.
+- **Long lists fold**: each section shows its first lines. Click "+N more" to see the rest.
 - **A bag hint**: one chat line when your bags are nearly full and finished quests hold slots.
 
 ## Open it
@@ -56,6 +57,8 @@ These two have no directions yet.
 | `/dropoff` or `/dof` | Opens and closes the window |
 | `/dropoff list` | Prints the route in chat |
 | `/dropoff alert` | Turns the bag hint on or off |
+| `/dropoff fly` | Turns auto-flight on or off |
+| `/dropoff welcome` | Opens the welcome window again |
 | `/dropoff debug` | Saves a snapshot to attach to a bug report |
 
 ## Good to know
@@ -93,6 +96,7 @@ Conçu pour WoW Forever, en français et en anglais.
 - **Une flèche** : celle de TomTom si tu l'as, sinon le repère de carte du jeu.
 - **Discret** : un mode compact, et une longue liste s'arrête au-dessus du chat et défile.
 - **Vol automatique, en option** : désactivé par défaut. Clic droit sur le bon maître de vol et DropOff prend le vol conseillé. Garde Maj pour choisir toi-même.
+- **Les longues listes se replient** : chaque section montre ses premières lignes. Clique sur « +N autres » pour voir la suite.
 - **Une alerte de sacs** : une ligne dans le chat quand tes sacs sont presque pleins et que des quêtes terminées occupent des emplacements.
 
 ## L'ouvrir
@@ -125,6 +129,8 @@ Ces deux listes n'ont pas encore de guidage.
 | `/dropoff` ou `/dof` | Ouvre et ferme la fenêtre |
 | `/dropoff list` | Affiche l'itinéraire dans le chat |
 | `/dropoff alert` | Active ou coupe l'alerte de sacs |
+| `/dropoff fly` | Active ou coupe le vol automatique |
+| `/dropoff welcome` | Rouvre la fenêtre d'accueil |
 | `/dropoff debug` | Enregistre un instantané à joindre à un rapport de bug |
 
 ## Bon à savoir
