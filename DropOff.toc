@@ -3,7 +3,7 @@
 ## Notes: Guides you to turn in finished quests, quickest first, with the whole trip: flights, zeppelins, boats.
 ## Notes-frFR: Te guide pour rendre tes quêtes terminées, les plus rapides d'abord, avec tout le trajet : vols, zeppelins, bateaux.
 ## Author: Hasuwini77 (Team Baguette)
-## Version: 0.9.0
+## Version: 0.9.1
 ## IconTexture: Interface\Icons\INV_Misc_Bag_08
 ## Category: Quests
 ## Category-frFR: Quêtes
